@@ -228,7 +228,7 @@ async def classify_and_execute_intent(text: str) -> Dict[str, Any]:
         if matched_product:
             entities["product"] = matched_product["name"]
             entities["quantity"] = qty
-            await adjust_stock(matched_product["id"], qty)
+            await adjust_stock(matched_product["id"], qty, reason=f"Voice AI stock addition: {raw_text}")
             reply = f"✅ Added {qty} {matched_product['unit']} to {matched_product['name']}. New stock: {matched_product['current_stock'] + qty}."
         else:
             reply = "Please specify which product to add stock for."
