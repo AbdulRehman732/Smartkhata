@@ -1,0 +1,3 @@
+# Optional dependencies for Speech-to-Text (Whisper)
+openai-whisper>=20231117
+torch>=2.2.0

@@ -1,0 +1,104 @@
+import uuid
+from typing import List, Optional, Dict, Any
+from app.database import get_database
+from app.models.schemas import CustomerCreate, CustomerPayment, utc_now_iso
+
+async def create_customer(data: CustomerCreate) -> Dict[str, Any]:
+    db = get_database()
+    now = utc_now_iso()
+    doc = data.model_dump()
+    doc["_id"] = str(uuid.uuid4())
+    doc["balance_due"] = 0.0
+    doc["updated_at"] = now
+    await db["customers"].insert_one(doc)
+    doc["id"] = doc["_id"]
+    return doc
+
+async def get_customers() -> List[Dict[str, Any]]:
+    db = get_database()
+    cursor = db["customers"].find({})
+    customers = await cursor.to_list(1000)
+    for c in customers:
+        c["id"] = c["_id"]
+    return customers
+
+async def get_customer_by_id(customer_id: str) -> Optional[Dict[str, Any]]:
+    db = get_database()
+    doc = await db["customers"].find_one({"_id": customer_id})
+    if doc:
+        doc["id"] = doc["_id"]
+    return doc
+
+async def record_customer_payment(data: CustomerPayment) -> Dict[str, Any]:
+    db = get_database()
+    now = utc_now_iso()
+    customer = await get_customer_by_id(data.customer_id)
+    if not customer:
+        raise ValueError(f"Customer with ID '{data.customer_id}' not found.")
+    
+    if data.amount <= 0:
+        raise ValueError("Payment amount must be greater than zero.")
+
+    payment_date = data.date or now
+    payment_doc = {
+        "_id": str(uuid.uuid4()),
+        "customer_id": data.customer_id,
+        "amount": data.amount,
+        "note": data.note or "Khata payment received",
+        "date": payment_date
+    }
+    await db["customer_payments"].insert_one(payment_doc)
+
+    # Reduce balance_due
+    new_balance = customer.get("balance_due", 0.0) - data.amount
+    await db["customers"].update_one(
+        {"_id": data.customer_id},
+        {
+            "$inc": {"balance_due": -data.amount},
+            "$set": {"updated_at": now}
+        }
+    )
+
+    payment_doc["id"] = payment_doc["_id"]
+    payment_doc["new_balance_due"] = new_balance
+    return payment_doc
+
+async def get_customer_transaction_history(customer_id: str) -> List[Dict[str, Any]]:
+    db = get_database()
+    customer = await get_customer_by_id(customer_id)
+    if not customer:
+        raise ValueError(f"Customer with ID '{customer_id}' not found.")
+
+    history: List[Dict[str, Any]] = []
+
+    # Fetch orders for this customer where amount_added_to_khata > 0
+    order_cursor = db["orders"].find({"customer_id": customer_id, "amount_added_to_khata": {"$gt": 0}})
+    orders = await order_cursor.to_list(1000)
+
+    for o in orders:
+        history.append({
+            "type": "sale_credit",
+            "id": o["_id"],
+            "date": o.get("created_at", ""),
+            "amount": o.get("amount_added_to_khata", 0.0),
+            "description": f"Credit Sale (Order #{str(o['_id'])[:8]})",
+            "payment_method": o.get("payment_method"),
+            "total_order_amount": o.get("total_amount")
+        })
+
+    # Fetch customer payments
+    pay_cursor = db["customer_payments"].find({"customer_id": customer_id})
+    payments = await pay_cursor.to_list(1000)
+
+    for p in payments:
+        history.append({
+            "type": "payment_received",
+            "id": p["_id"],
+            "date": p.get("date", ""),
+            "amount": p.get("amount", 0.0),
+            "description": f"Payment: {p.get('note', 'Khata payment')}"
+        })
+
+    # Sort interleaved history newest-first
+    history.sort(key=lambda x: x.get("date", ""), reverse=True)
+    return history
