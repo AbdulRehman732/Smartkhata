@@ -38,6 +38,37 @@ app.include_router(sync.router)
 app.include_router(invoice.router)
 app.include_router(backup.router)
 
+@app.on_event("startup")
+async def seed_default_users():
+    from app.database import get_database
+    from app.auth.security import hash_password
+    import uuid
+
+    db = get_database()
+    # Seed Owner / Admin Account if not exists
+    existing_owner = await db["users"].find_one({"username": "admin"})
+    if not existing_owner:
+        await db["users"].insert_one({
+            "_id": str(uuid.uuid4()),
+            "username": "admin",
+            "hashed_password": hash_password("admin123"),
+            "name": "Tariq Kiryana Owner",
+            "role": "owner",
+            "employee_id": None
+        })
+
+    # Seed Employee / Staff Account if not exists
+    existing_staff = await db["users"].find_one({"username": "staff"})
+    if not existing_staff:
+        await db["users"].insert_one({
+            "_id": str(uuid.uuid4()),
+            "username": "staff",
+            "hashed_password": hash_password("staff123"),
+            "name": "Ali Cashier",
+            "role": "employee",
+            "employee_id": "EMP-101"
+        })
+
 @app.get("/")
 async def root():
     return {

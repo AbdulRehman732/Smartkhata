@@ -543,52 +543,83 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showDrawerMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppConstants.surfaceWhite,
+      backgroundColor: AppConstants.creamBg,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.sync, color: AppConstants.deepEmerald),
-                title: Text('Data Sync Status', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const SyncScreen()));
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.how_to_reg, color: AppConstants.deepEmerald),
-                title: Text('Daily Attendance', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendanceScreen()));
-                },
-              ),
-              if (_userRole == 'owner') ...[
+        return SafeArea(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Drag Handle Pill Bar
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: AppConstants.textMuted.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
                 ListTile(
-                  leading: const Icon(Icons.payments, color: AppConstants.deepEmerald),
-                  title: Text('Payroll HR', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                  leading: const CircleAvatar(
+                    backgroundColor: AppConstants.softGreenChip,
+                    child: Icon(Icons.sync, color: AppConstants.deepEmerald, size: 20),
+                  ),
+                  title: Text('Data Sync Status', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppConstants.charcoal)),
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const PayrollScreen()));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const SyncScreen()));
+                  },
+                ),
+                const SizedBox(height: 4),
+                ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: AppConstants.softGreenChip,
+                    child: Icon(Icons.how_to_reg, color: AppConstants.deepEmerald, size: 20),
+                  ),
+                  title: Text('Daily Attendance', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppConstants.charcoal)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendanceScreen()));
+                  },
+                ),
+                if (_userRole == 'owner') ...[
+                  const SizedBox(height: 4),
+                  ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: AppConstants.softGreenChip,
+                      child: Icon(Icons.payments, color: AppConstants.deepEmerald, size: 20),
+                    ),
+                    title: Text('Payroll HR', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppConstants.charcoal)),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const PayrollScreen()));
+                    },
+                  ),
+                ],
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Divider(color: AppConstants.softBorder),
+                ),
+                ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: AppConstants.softRedChip,
+                    child: Icon(Icons.logout, color: AppConstants.alertRed, size: 20),
+                  ),
+                  title: Text('Log Out', style: GoogleFonts.inter(color: AppConstants.alertRed, fontWeight: FontWeight.bold)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _logout();
                   },
                 ),
               ],
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.logout, color: AppConstants.alertRed),
-                title: Text('Log Out', style: GoogleFonts.inter(color: AppConstants.alertRed, fontWeight: FontWeight.w600)),
-                onTap: () {
-                  Navigator.pop(context);
-                  _logout();
-                },
-              ),
-            ],
+            ),
           ),
         );
       },

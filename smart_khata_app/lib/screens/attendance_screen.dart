@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../core/api_client.dart';
 import '../core/constants.dart';
@@ -13,7 +14,7 @@ class AttendanceScreen extends StatefulWidget {
 
 class _AttendanceScreenState extends State<AttendanceScreen> {
   List<Employee> _employees = [];
-  Map<String, String> _attendanceMap = {}; // emp_id -> status
+  Map<String, String> _attendanceMap = {};
   DateTime _selectedDate = DateTime.now();
   bool _isLoading = true;
 
@@ -43,7 +44,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         }
       }
     } catch (e) {
-      // Handle error gracefully
+      // Handle gracefully
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -63,7 +64,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update: $e'), backgroundColor: AppConstants.errorRed),
+        SnackBar(content: Text('Failed to update: $e'), backgroundColor: AppConstants.alertRed),
       );
     }
   }
@@ -71,21 +72,28 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.darkBg,
+      backgroundColor: AppConstants.creamBg,
       appBar: AppBar(
-        title: const Text('Daily Attendance Roster'),
-        backgroundColor: AppConstants.cardDark,
+        title: Text('Daily Attendance', style: GoogleFonts.instrumentSerif(color: AppConstants.charcoal, fontSize: 24, fontWeight: FontWeight.bold)),
+        backgroundColor: AppConstants.creamBg,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: AppConstants.charcoal),
       ),
       body: Column(
         children: [
           // Date Selector Bar
           Container(
-            padding: const EdgeInsets.all(12),
-            color: AppConstants.cardDark,
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppConstants.surfaceWhite,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppConstants.softBorder),
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Date: $_formattedDate', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                Text('Date: $_formattedDate', style: const TextStyle(color: AppConstants.charcoal, fontSize: 16, fontWeight: FontWeight.bold)),
                 ElevatedButton.icon(
                   onPressed: () async {
                     final picked = await showDatePicker(
@@ -100,8 +108,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     }
                   },
                   icon: const Icon(Icons.calendar_today, size: 16, color: Colors.white),
-                  label: const Text('CHANGE DATE', style: TextStyle(color: Colors.white)),
-                  style: ElevatedButton.styleFrom(backgroundColor: AppConstants.primaryGreen),
+                  label: const Text('SELECT DATE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppConstants.deepEmerald,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                  ),
                 ),
               ],
             ),
@@ -110,65 +122,64 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           // Employee List Roster
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: AppConstants.primaryGreen))
-                : ListView.builder(
-                    itemCount: _employees.length,
-                    itemBuilder: (ctx, idx) {
-                      final emp = _employees[idx];
-                      final currentStatus = _attendanceMap[emp.id] ?? 'none';
-                      return Card(
-                        color: AppConstants.cardDark,
-                        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(emp.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                              Text('Role: ${emp.roleTitle} | Type: ${emp.salaryType.toUpperCase()}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                              const SizedBox(height: 8),
-
-                              // Quick Toggle Buttons
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  _buildStatusChip(emp.id, 'present', 'PRESENT', Colors.green, currentStatus),
-                                  _buildStatusChip(emp.id, 'half_day', 'HALF DAY', Colors.orange, currentStatus),
-                                  _buildStatusChip(emp.id, 'leave', 'LEAVE', Colors.blue, currentStatus),
-                                  _buildStatusChip(emp.id, 'absent', 'ABSENT', Colors.red, currentStatus),
-                                ],
+                ? const Center(child: CircularProgressIndicator(color: AppConstants.deepEmerald))
+                : _employees.isEmpty
+                    ? const Center(child: Text('No employees found', style: TextStyle(color: AppConstants.textMuted)))
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: _employees.length,
+                        itemBuilder: (ctx, idx) {
+                          final emp = _employees[idx];
+                          final currentStatus = _attendanceMap[emp.id] ?? 'none';
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            decoration: BoxDecoration(
+                              color: AppConstants.surfaceWhite,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppConstants.softBorder),
+                            ),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                              title: Text(emp.name, style: const TextStyle(color: AppConstants.charcoal, fontWeight: FontWeight.bold)),
+                              subtitle: Text('Role: ${emp.roleTitle.toUpperCase()} | Phone: ${emp.phone}',
+                                  style: const TextStyle(color: AppConstants.textMuted, fontSize: 12)),
+                              trailing: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ChoiceChip(
+                                      label: const Text('Present'),
+                                      selected: currentStatus == 'present',
+                                      selectedColor: AppConstants.softGreenChip,
+                                      labelStyle: TextStyle(
+                                        color: currentStatus == 'present' ? AppConstants.deepEmerald : AppConstants.textMuted,
+                                        fontWeight: currentStatus == 'present' ? FontWeight.bold : FontWeight.normal,
+                                        fontSize: 12,
+                                      ),
+                                      onSelected: (_) => _markStatus(emp.id, 'present'),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    ChoiceChip(
+                                      label: const Text('Absent'),
+                                      selected: currentStatus == 'absent',
+                                      selectedColor: AppConstants.softRedChip,
+                                      labelStyle: TextStyle(
+                                        color: currentStatus == 'absent' ? AppConstants.alertRed : AppConstants.textMuted,
+                                        fontWeight: currentStatus == 'absent' ? FontWeight.bold : FontWeight.normal,
+                                        fontSize: 12,
+                                      ),
+                                      onSelected: (_) => _markStatus(emp.id, 'absent'),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                            ),
+                          );
+                        },
+                      ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildStatusChip(String empId, String statusKey, String label, Color color, String activeStatus) {
-    final isSelected = activeStatus == statusKey;
-    return GestureDetector(
-      onTap: () => _markStatus(empId, statusKey),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? color : color.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : color,
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
       ),
     );
   }

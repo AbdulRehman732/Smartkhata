@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../core/constants.dart';
 import '../core/database_helper.dart';
 import '../core/sync_manager.dart';
@@ -77,10 +78,12 @@ class _SyncScreenState extends State<SyncScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.darkBg,
+      backgroundColor: AppConstants.creamBg,
       appBar: AppBar(
-        title: const Text('Offline Sync & Local Backup'),
-        backgroundColor: AppConstants.cardDark,
+        title: Text('Offline Sync & Backup', style: GoogleFonts.instrumentSerif(color: AppConstants.charcoal, fontSize: 24, fontWeight: FontWeight.bold)),
+        backgroundColor: AppConstants.creamBg,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: AppConstants.charcoal),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -89,20 +92,32 @@ class _SyncScreenState extends State<SyncScreen> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: AppConstants.cardDark,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppConstants.accentGold),
+                color: AppConstants.surfaceWhite,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppConstants.softBorder),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.02),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Column(
                 children: [
-                  const Icon(Icons.cloud_sync, size: 48, color: AppConstants.accentGold),
+                  const CircleAvatar(
+                    radius: 30,
+                    backgroundColor: AppConstants.softGreenChip,
+                    child: Icon(Icons.cloud_sync, size: 32, color: AppConstants.deepEmerald),
+                  ),
                   const SizedBox(height: 12),
-                  const Text('Pending Offline Sync Queue', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text('Pending Offline Sync Queue', style: GoogleFonts.instrumentSerif(color: AppConstants.charcoal, fontSize: 22, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       _buildQueueTile('Queued Orders', '$_pendingOrdersCount'),
+                      Container(height: 40, width: 1, color: AppConstants.softBorder),
                       _buildQueueTile('Queued Attendance', '$_pendingAttendanceCount'),
                     ],
                   ),
@@ -113,36 +128,43 @@ class _SyncScreenState extends State<SyncScreen> {
 
             if (_syncMessage != null)
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(14),
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                  color: AppConstants.primaryGreen.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppConstants.primaryGreen),
+                  color: AppConstants.softGreenChip,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppConstants.deepEmerald.withOpacity(0.3)),
                 ),
-                child: Text(_syncMessage!, style: const TextStyle(color: Colors.white)),
+                child: Text(_syncMessage!, style: const TextStyle(color: AppConstants.deepEmerald, fontWeight: FontWeight.bold, fontSize: 13)),
               ),
 
             SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 52,
               child: ElevatedButton.icon(
                 onPressed: _isSyncing ? null : _triggerManualSync,
-                icon: const Icon(Icons.sync, color: Colors.white),
-                label: const Text('SYNC NOW WITH SERVER', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                style: ElevatedButton.styleFrom(backgroundColor: AppConstants.primaryGreen),
+                icon: const Icon(Icons.sync, color: Colors.white, size: 20),
+                label: const Text('SYNC NOW WITH SERVER', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: 0.5)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppConstants.deepEmerald,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
               ),
             ),
             const SizedBox(height: 12),
 
             SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 52,
               child: OutlinedButton.icon(
                 onPressed: _isSyncing ? null : _exportBackupFile,
-                icon: const Icon(Icons.save_alt, color: AppConstants.accentGold),
-                label: const Text('EXPORT LOCAL JSON BACKUP (USB / FILE)', style: TextStyle(color: AppConstants.accentGold, fontWeight: FontWeight.bold, fontSize: 14)),
-                style: OutlinedButton.styleFrom(side: const BorderSide(color: AppConstants.accentGold)),
+                icon: const Icon(Icons.save_alt, color: AppConstants.mutedTerracotta, size: 20),
+                label: const Text('EXPORT LOCAL JSON BACKUP', style: TextStyle(color: AppConstants.mutedTerracotta, fontWeight: FontWeight.bold, fontSize: 14)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppConstants.mutedTerracotta, width: 1.5),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
               ),
             ),
           ],
@@ -154,8 +176,8 @@ class _SyncScreenState extends State<SyncScreen> {
   Widget _buildQueueTile(String title, String count) {
     return Column(
       children: [
-        Text(count, style: const TextStyle(color: AppConstants.accentGold, fontSize: 24, fontWeight: FontWeight.bold)),
-        Text(title, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+        Text(count, style: GoogleFonts.instrumentSerif(color: AppConstants.mutedTerracotta, fontSize: 32, fontWeight: FontWeight.bold)),
+        Text(title, style: const TextStyle(color: AppConstants.textMuted, fontSize: 13, fontWeight: FontWeight.w500)),
       ],
     );
   }

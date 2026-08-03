@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../core/api_client.dart';
 import '../core/constants.dart';
 import '../models/product.dart';
@@ -42,7 +43,6 @@ class _PosScreenState extends State<PosScreen> {
         });
       }
     } catch (e) {
-      // Fallback to local SQLite cache
       final cachedProducts = await DatabaseHelper.instance.getCachedProducts();
       final cachedCustomers = await DatabaseHelper.instance.getCachedCustomers();
       setState(() {
@@ -55,7 +55,7 @@ class _PosScreenState extends State<PosScreen> {
   double get _subtotal {
     double sum = 0.0;
     _cartQuantities.forEach((prodId, qty) {
-      final prod = _availableProducts.firstWhere((p) => p.id == prodId);
+      final prod = _availableProducts.firstWhere((p) => p.id == prodId, orElse: () => Product(id: '', name: '', category: '', unit: '', buyingPrice: 0, sellingPrice: 0, currentStock: 0, lowStockThreshold: 0, updatedAt: ''));
       sum += (prod.sellingPrice * qty);
     });
     return sum;
@@ -101,20 +101,19 @@ class _PosScreenState extends State<PosScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order Created Successfully!'), backgroundColor: AppConstants.primaryGreen),
+        const SnackBar(content: Text('Order Created Successfully!'), backgroundColor: AppConstants.deepEmerald),
       );
       Navigator.pop(context);
     } on SocketException catch (_) {
-      // Queue offline write
       await DatabaseHelper.instance.queueOfflineOrder(clientId, Uri.encodeComponent(payload.toString()));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Offline mode: Order queued for sync!'), backgroundColor: AppConstants.accentGold),
+        const SnackBar(content: Text('Offline mode: Order queued for sync!'), backgroundColor: AppConstants.mutedTerracotta),
       );
       Navigator.pop(context);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString()), backgroundColor: AppConstants.errorRed),
+        SnackBar(content: Text(e.toString()), backgroundColor: AppConstants.alertRed),
       );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -124,142 +123,217 @@ class _PosScreenState extends State<PosScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.darkBg,
+      backgroundColor: AppConstants.creamBg,
       appBar: AppBar(
-        title: const Text('New Order (POS)'),
-        backgroundColor: AppConstants.cardDark,
+        title: Text('New Order (POS)', style: GoogleFonts.instrumentSerif(color: AppConstants.charcoal, fontSize: 24, fontWeight: FontWeight.bold)),
+        backgroundColor: AppConstants.creamBg,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: AppConstants.charcoal),
       ),
       body: Column(
         children: [
           // Product Selector List
           Expanded(
-            flex: 3,
-            child: ListView.builder(
-              itemCount: _availableProducts.length,
-              itemBuilder: (ctx, idx) {
-                final prod = _availableProducts[idx];
-                final qtyInCart = _cartQuantities[prod.id] ?? 0.0;
-                return Card(
-                  color: AppConstants.cardDark,
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: ListTile(
-                    title: Text(prod.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    subtitle: Text('Price: Rs. ${prod.sellingPrice} | Stock: ${prod.currentStock} ${prod.unit}',
-                        style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (qtyInCart > 0)
-                          IconButton(
-                            icon: const Icon(Icons.remove_circle, color: AppConstants.errorRed),
-                            onPressed: () {
-                              setState(() {
-                                if (qtyInCart > 1) {
-                                  _cartQuantities[prod.id] = qtyInCart - 1;
-                                } else {
-                                  _cartQuantities.remove(prod.id);
-                                }
-                              });
-                            },
-                          ),
-                        if (qtyInCart > 0)
-                          Text('$qtyInCart', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        IconButton(
-                          icon: const Icon(Icons.add_circle, color: AppConstants.primaryGreen),
-                          onPressed: () {
-                            setState(() {
-                              _cartQuantities[prod.id] = qtyInCart + 1;
-                            });
-                          },
+            child: _availableProducts.isEmpty
+                ? Center(
+                    child: Text('No products found', style: TextStyle(color: AppConstants.textMuted, fontSize: 16)),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    itemCount: _availableProducts.length,
+                    itemBuilder: (ctx, idx) {
+                      final prod = _availableProducts[idx];
+                      final qtyInCart = _cartQuantities[prod.id] ?? 0.0;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: AppConstants.surfaceWhite,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppConstants.softBorder),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.02),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          title: Text(prod.name, style: const TextStyle(color: AppConstants.charcoal, fontWeight: FontWeight.bold, fontSize: 16)),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Rs. ${prod.sellingPrice} | Stock: ${prod.currentStock} ${prod.unit}',
+                              style: const TextStyle(color: AppConstants.textMuted, fontSize: 13),
+                            ),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (qtyInCart > 0)
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline, color: AppConstants.alertRed, size: 24),
+                                  onPressed: () {
+                                    setState(() {
+                                      if (qtyInCart > 1) {
+                                        _cartQuantities[prod.id] = qtyInCart - 1;
+                                      } else {
+                                        _cartQuantities.remove(prod.id);
+                                      }
+                                    });
+                                  },
+                                ),
+                              if (qtyInCart > 0)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                                  child: Text('${qtyInCart.toInt()}', style: const TextStyle(color: AppConstants.charcoal, fontWeight: FontWeight.bold, fontSize: 16)),
+                                ),
+                              IconButton(
+                                icon: const Icon(Icons.add_circle, color: AppConstants.deepEmerald, size: 28),
+                                onPressed: () {
+                                  setState(() {
+                                    _cartQuantities[prod.id] = qtyInCart + 1;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
 
           // Order Checkout Box
           Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: AppConstants.cardDark,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Column(
-              children: [
-                // Payment Method Selector
-                Row(
-                  children: [
-                    const Text('Payment Mode: ', style: TextStyle(color: Colors.white)),
-                    const SizedBox(width: 8),
-                    ChoiceChip(
-                      label: const Text('Cash'),
-                      selected: _paymentMethod == 'cash',
-                      onSelected: (val) => setState(() => _paymentMethod = 'cash'),
-                    ),
-                    const SizedBox(width: 4),
-                    ChoiceChip(
-                      label: const Text('Credit'),
-                      selected: _paymentMethod == 'credit',
-                      onSelected: (val) => setState(() => _paymentMethod = 'credit'),
-                    ),
-                    const SizedBox(width: 4),
-                    ChoiceChip(
-                      label: const Text('Partial'),
-                      selected: _paymentMethod == 'partial',
-                      onSelected: (val) => setState(() => _paymentMethod = 'partial'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-
-                // Customer Dropdown if Credit/Partial
-                if (_paymentMethod != 'cash')
-                  DropdownButton<Customer>(
-                    dropdownColor: AppConstants.cardDark,
-                    hint: const Text('Select Khata Customer', style: TextStyle(color: Colors.grey)),
-                    value: _selectedCustomer,
-                    isExpanded: true,
-                    items: _customers.map((c) {
-                      return DropdownMenuItem(
-                        value: c,
-                        child: Text('${c.name} (${c.phone}) - Due: Rs. ${c.balanceDue}',
-                            style: const TextStyle(color: Colors.white)),
-                      );
-                    }).toList(),
-                    onChanged: (c) => setState(() => _selectedCustomer = c),
-                  ),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Subtotal:', style: TextStyle(color: Colors.grey)),
-                    Text('Rs. $_subtotal', style: const TextStyle(color: Colors.white, fontSize: 16)),
-                  ],
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Total Amount:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-                    Text('Rs. $_total', style: const TextStyle(color: AppConstants.accentGold, fontWeight: FontWeight.bold, fontSize: 20)),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: _isSubmitting ? null : _submitOrder,
-                    style: ElevatedButton.styleFrom(backgroundColor: AppConstants.primaryGreen),
-                    child: _isSubmitting
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text('COMPLETE SALE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                  ),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppConstants.surfaceWhite,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border.all(color: AppConstants.softBorder),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 16,
+                  offset: const Offset(0, -4),
                 ),
               ],
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Payment Method Selector with Horizontal Scroll to prevent overflow
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        const Text('Payment Mode: ', style: TextStyle(color: AppConstants.charcoal, fontWeight: FontWeight.bold, fontSize: 14)),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('Cash'),
+                          selected: _paymentMethod == 'cash',
+                          selectedColor: AppConstants.softGreenChip,
+                          labelStyle: TextStyle(
+                            color: _paymentMethod == 'cash' ? AppConstants.deepEmerald : AppConstants.textMuted,
+                            fontWeight: _paymentMethod == 'cash' ? FontWeight.bold : FontWeight.normal,
+                          ),
+                          onSelected: (val) => setState(() => _paymentMethod = 'cash'),
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('Credit (Khata)'),
+                          selected: _paymentMethod == 'credit',
+                          selectedColor: AppConstants.softGreenChip,
+                          labelStyle: TextStyle(
+                            color: _paymentMethod == 'credit' ? AppConstants.deepEmerald : AppConstants.textMuted,
+                            fontWeight: _paymentMethod == 'credit' ? FontWeight.bold : FontWeight.normal,
+                          ),
+                          onSelected: (val) => setState(() => _paymentMethod = 'credit'),
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('Partial'),
+                          selected: _paymentMethod == 'partial',
+                          selectedColor: AppConstants.softGreenChip,
+                          labelStyle: TextStyle(
+                            color: _paymentMethod == 'partial' ? AppConstants.deepEmerald : AppConstants.textMuted,
+                            fontWeight: _paymentMethod == 'partial' ? FontWeight.bold : FontWeight.normal,
+                          ),
+                          onSelected: (val) => setState(() => _paymentMethod = 'partial'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Customer Dropdown if Credit/Partial
+                  if (_paymentMethod != 'cash')
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: AppConstants.creamBg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppConstants.softBorder),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<Customer>(
+                          dropdownColor: AppConstants.surfaceWhite,
+                          hint: const Text('Select Khata Customer', style: TextStyle(color: AppConstants.textMuted)),
+                          value: _selectedCustomer,
+                          isExpanded: true,
+                          items: _customers.map((c) {
+                            return DropdownMenuItem(
+                              value: c,
+                              child: Text('${c.name} (${c.phone}) - Due: Rs. ${c.balanceDue}',
+                                  style: const TextStyle(color: AppConstants.charcoal, fontSize: 14)),
+                            );
+                          }).toList(),
+                          onChanged: (c) => setState(() => _selectedCustomer = c),
+                        ),
+                      ),
+                    ),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Subtotal:', style: TextStyle(color: AppConstants.textMuted, fontSize: 14)),
+                      Text('Rs. $_subtotal', style: const TextStyle(color: AppConstants.charcoal, fontSize: 16, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Total Amount:', style: TextStyle(color: AppConstants.charcoal, fontWeight: FontWeight.bold, fontSize: 18)),
+                      Text('Rs. $_total', style: GoogleFonts.instrumentSerif(color: AppConstants.mutedTerracotta, fontWeight: FontWeight.bold, fontSize: 24)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _isSubmitting ? null : _submitOrder,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppConstants.deepEmerald,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: _isSubmitting
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Text('COMPLETE SALE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5)),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
