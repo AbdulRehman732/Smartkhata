@@ -34,7 +34,7 @@ class SyncManager {
       }
 
       try {
-        final pushRes = await _apiClient.post('/sync/push', {
+        await _apiClient.post('/sync/push', {
           'orders': orderList,
           'attendance': attList,
         });
