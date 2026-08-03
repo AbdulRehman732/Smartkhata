@@ -1,7 +1,7 @@
 {
-  "python_interpreter": "C:\\Users\\aar25\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+  "python_interpreter": ".venv/Scripts/python.exe",
   "site_packages": [
-    "C:\\Users\\aar25\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages"
+    ".venv/Lib/site-packages"
   ],
   "python_version": "3.13"
 }
