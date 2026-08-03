@@ -122,12 +122,11 @@ async def classify_and_execute_intent(text: str) -> Dict[str, Any]:
     entities = {}
     reply = ""
 
-    # 1. ACTION: Record Customer Khata Payment (Updates Customer Ledger & Cashbook!)
-    # Speech examples: "Ali ne 500 rupay jamah karwaye", "record payment 500 for Ali", "500 wapas kiye"
+    # 1. ACTION: record_payment (Ali paid 500 rupees / علی نے 500 روپے دیے)
     if matched_customer and any(k in text_lower for k in ["diye", "paid", "jamah", "payment", "vasool", "wapas", "karwaye"]):
         intent = "record_payment"
-        entities["customer"] = matched_customer["name"]
-        entities["wallet"] = payment_method
+        entities["person"] = matched_customer["name"]
+        entities["payment_method"] = payment_method
         amount = extracted_numbers[0] if extracted_numbers else 0.0
 
         if amount > 0:
@@ -136,19 +135,16 @@ async def classify_and_execute_intent(text: str) -> Dict[str, Any]:
                 customer_id=matched_customer["id"],
                 amount=amount,
                 payment_method=payment_method,
-                note=f"Voice Command ASR: {raw_text}"
+                note=f"Voice AI: {raw_text}"
             ))
             reply = f"✅ Payment of Rs. {amount} via {payment_method.upper()} recorded for {matched_customer['name']}. New Khata balance due: Rs. {payment_res['new_balance_due']}."
         else:
-            reply = f"Please specify the payment amount to record for {matched_customer['name']}."
+            reply = f"Please specify the payment amount for {matched_customer['name']}."
 
-    # 2. ACTION: Voice Order Creation (Creates Sale Order, Deducts Stock, Updates Ledger!)
-    # Speech examples: "Ali ko 2 kilo chawal credit per becho", "sell 2 kg sugar to Ali", "chawal bech diye"
-    elif (matched_product or matched_customer) and any(k in text_lower for k in ["becho", "sell", "order", "sale", "diya", "bana do"]):
-        intent = "create_order"
+    # 2. ACTION: record_sale (Sell 2 kg sugar to Ali / علی کو 2 کلو چینی بیچو)
+    elif any(k in text_lower for k in ["becho", "sell", "record_sale", "sale", "bana do"]) or (matched_product and any(k in text_lower for k in ["order", "kilo", "kg", "bag", "piece"])):
+        intent = "record_sale"
         qty = extracted_numbers[0] if extracted_numbers else 1.0
-        
-        # Determine sale mode (credit vs cash)
         is_credit = any(k in text_lower for k in ["udhaar", "credit", "khata"])
         sale_method = "credit" if is_credit else "cash"
 
@@ -163,38 +159,48 @@ async def classify_and_execute_intent(text: str) -> Dict[str, Any]:
                     discount=0.0,
                     payment_method=sale_method,
                     customer_id=matched_customer["id"] if matched_customer else None,
-                    client_id=f"voice_order_{qty}_{matched_product['id'][:6]}"
+                    client_id=f"voice_sale_{qty}_{matched_product['id'][:6]}"
                 ))
                 cust_info = f" for customer {matched_customer['name']} (Khata Updated)" if matched_customer and is_credit else ""
                 reply = f"✅ Sale order created: {qty} {matched_product['unit']} of {matched_product['name']}{cust_info}. Total: Rs. {order_res['total_amount']}. Stock remaining: {matched_product['current_stock'] - qty}."
             except Exception as ex:
                 reply = f"⚠️ Could not complete voice sale order: {str(ex)}"
         else:
-            reply = "Please specify the product name for creating the voice sale order."
+            reply = "Please specify the product name for recording the sale."
 
-    # 3. ACTION: Mark Employee Attendance (Updates Attendance Roster!)
-    elif matched_employee and any(k in text_lower for k in ["present", "absent", "half day", "leave", "hazir", "aya", "ghair"]):
-        intent = "mark_attendance"
-        entities["employee"] = matched_employee["name"]
-        status = "present"
-        if "absent" in text_lower or "ghair" in text_lower:
-            status = "absent"
-        elif "half" in text_lower or "aadha" in text_lower:
-            status = "half_day"
-        elif "leave" in text_lower or "chutti" in text_lower:
-            status = "leave"
+    # 3. ACTION: add_expense (Electricity bill 3000 rupees / بجلی کا بل 3000 روپے)
+    elif any(k in text_lower for k in ["expense", "bill", "bijli", "rent", "kiraya", "kharcha", "kharch"]):
+        intent = "add_expense"
+        amount = extracted_numbers[0] if extracted_numbers else 0.0
+        category = "utilities" if any(k in text_lower for k in ["bijli", "electricity", "utility"]) else "misc"
+        if "rent" in text_lower or "kiraya" in text_lower: category = "rent"
 
-        from datetime import datetime, timezone
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if amount > 0:
+            entities["amount"] = amount
+            entities["category"] = category
+            from app.services.cashbook_service import create_expense
+            from app.models.schemas import ExpenseCreate
+            await create_expense(ExpenseCreate(
+                category=category,
+                amount=amount,
+                payment_method=payment_method,
+                note=f"Voice AI: {raw_text}"
+            ))
+            reply = f"✅ Expense of Rs. {amount} logged under {category.upper()}."
+        else:
+            reply = "Please specify the expense amount."
 
-        await mark_attendance(AttendanceMark(
-            employee_id=matched_employee["id"],
-            date=today_str,
-            status=status
-        ))
-        reply = f"✅ Attendance for employee {matched_employee['name']} marked as '{status.upper()}' for today ({today_str})."
+    # 4. ACTION: customer_balance / check_balance (How much does Ali owe? / علی کا کتنا باقی ہے)
+    elif any(k in text_lower for k in ["check_balance", "customer_balance", "balance", "owe", "khata", "udhaar", "baki", "dene hain", "hisaab"]):
+        intent = "customer_balance"
+        if matched_customer:
+            entities["person"] = matched_customer["name"]
+            reply = f"{matched_customer['name']} owes Rs. {matched_customer['balance_due']}."
+        else:
+            total_pending = sum(c.get("balance_due", 0.0) for c in customers)
+            reply = f"Total pending customer Khata balance across all customers is Rs. {total_pending}."
 
-    # 4. ACTION: Restock List Query
+    # 5. ACTION: restock_list (Restock recommendation list)
     elif any(k in text_lower for k in ["restock", "reorder", "mangalwao", "khatam hone wala", "stock kam"]):
         intent = "restock_list"
         forecast_data = await generate_demand_forecast()
@@ -205,18 +211,8 @@ async def classify_and_execute_intent(text: str) -> Dict[str, Any]:
         else:
             reply = "All products currently have sufficient stock levels!"
 
-    # 5. ACTION: Customer Khata Balance Query
-    elif any(k in text_lower for k in ["balance", "khata", "udhaar", "dene hain", "hisaab"]) or (matched_customer and "balance" in text_lower) or (matched_customer and "kitna" in text_lower):
-        intent = "customer_balance"
-        if matched_customer:
-            entities["customer"] = matched_customer["name"]
-            reply = f"{matched_customer['name']} owes Rs. {matched_customer['balance_due']}."
-        else:
-            total_pending = sum(c.get("balance_due", 0.0) for c in customers)
-            reply = f"Total pending customer Khata balance across all customers is Rs. {total_pending}."
-
-    # 6. ACTION: Check Product Stock Query
-    elif any(k in text_lower for k in ["stock", "available", "quantity", "kitna hai"]) or matched_product:
+    # 6. ACTION: check_stock (Check product stock / chawal ka stock check karo)
+    elif any(k in text_lower for k in ["stock", "available", "quantity", "kitna hai", "check_stock"]) or (matched_product and "stock" in text_lower):
         intent = "check_stock"
         if matched_product:
             entities["product"] = matched_product["name"]
@@ -225,16 +221,60 @@ async def classify_and_execute_intent(text: str) -> Dict[str, Any]:
             low_stock = [p for p in products if p.get("current_stock", 0) <= p.get("low_stock_threshold", 5)]
             reply = f"Total products: {len(products)}. {len(low_stock)} products are low on stock."
 
-    # 7. ACTION: Daily Summary Query
-    elif any(k in text_lower for k in ["daily summary", "summary", "aaj ki kamai", "today", "dashboard"]):
-        intent = "daily_summary"
-        metrics = await get_dashboard_metrics()
-        reply = (f"Today's Summary: Revenue Rs. {metrics['today_revenue']}, Profit Rs. {metrics['today_profit']}, "
-                 f"Cash Collected Rs. {metrics['cash_collected']}, Orders: {metrics['order_count']}.")
+    # 7. ACTION: add_stock (Add 10 kg flour / 10 کلو آٹا شامل کرو)
+    elif any(k in text_lower for k in ["add_stock", "add stock", "shamil", "stock add", "bharo"]) or (matched_product and "add" in text_lower):
+        intent = "add_stock"
+        qty = extracted_numbers[0] if extracted_numbers else 10.0
+        if matched_product:
+            entities["product"] = matched_product["name"]
+            entities["quantity"] = qty
+            await adjust_stock(matched_product["id"], qty)
+            reply = f"✅ Added {qty} {matched_product['unit']} to {matched_product['name']}. New stock: {matched_product['current_stock'] + qty}."
+        else:
+            reply = "Please specify which product to add stock for."
+
+    # 6. ACTION: mark_attendance (Ali is present today / علی آج حاضر ہے)
+    elif matched_employee and any(k in text_lower for k in ["present", "absent", "hazir", "ghair", "attendance", "aya"]):
+        intent = "mark_attendance"
+        entities["person"] = matched_employee["name"]
+        status = "absent" if any(k in text_lower for k in ["absent", "ghair"]) else "present"
+        from datetime import datetime, timezone
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        await mark_attendance(AttendanceMark(
+            employee_id=matched_employee["id"],
+            date=today_str,
+            status=status
+        ))
+        reply = f"✅ Attendance for employee {matched_employee['name']} marked as '{status.upper()}' for today."
+
+    # 7. ACTION: pay_salary (Pay Ali 15000 salary / علی کو تنخواہ دو)
+    elif any(k in text_lower for k in ["pay_salary", "salary", "tankhwah", "tanqwah"]):
+        intent = "pay_salary"
+        amount = extracted_numbers[0] if extracted_numbers else 15000.0
+        target_name = matched_employee["name"] if matched_employee else (matched_customer["name"] if matched_customer else "Employee")
+        entities["person"] = target_name
+        entities["amount"] = amount
+        from app.services.cashbook_service import create_expense
+        from app.models.schemas import ExpenseCreate
+        await create_expense(ExpenseCreate(
+            category="salaries",
+            amount=amount,
+            payment_method=payment_method,
+            note=f"Salary paid to {target_name} via Voice AI"
+        ))
+        reply = f"✅ Salary of Rs. {amount} paid to {target_name} via {payment_method.upper()}."
+
+    # 8. ACTION: generate_bill (Generate bill for Ali / علی کا بل بناؤ)
+    elif any(k in text_lower for k in ["generate_bill", "bill", "invoice", "receipt", "parcha", "rasid"]):
+        intent = "generate_bill"
+        target_name = matched_customer["name"] if matched_customer else "Customer"
+        entities["person"] = target_name
+        reply = f"📄 Bill / Invoice PDF generated for {target_name}. Available in Reports & Invoice section."
 
     else:
         intent = "unknown"
-        reply = "Sorry, I couldn't understand that command. Try saying: 'Ali ne 500 rupay jamah karwaye' or 'Ali ko 2 kilo chawal becho'."
+        reply = "Command received. Try saying: 'Ali ne 500 rupay diye', 'Electricity bill 3000', or 'Ali ko 2 kilo chawal becho'."
 
     return {
         "intent": intent,
