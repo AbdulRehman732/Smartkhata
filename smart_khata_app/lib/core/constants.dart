@@ -5,11 +5,13 @@ class AppConstants {
   static const String appName = 'Smart Khata';
   
   // Dynamic API Base URL for Web (Chrome/Edge) vs Android Emulator
+  // Dynamic API Base URL for Web, Desktop, and Physical Mobile
   static String get baseUrl {
     if (kIsWeb) {
       return 'http://127.0.0.1:8000/api';
     }
-    return 'http://127.0.0.1:8000/api'; // Works for Windows Desktop, Chrome, and local dev
+    // Physical mobile device IP fallback or ADB reverse localhost
+    return 'http://10.133.242.102:8000/api';
   }
 
   // Storage Keys

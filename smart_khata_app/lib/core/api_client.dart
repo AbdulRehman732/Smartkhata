@@ -22,37 +22,53 @@ class ApiClient {
     return headers;
   }
 
-  Future<dynamic> get(String endpoint) async {
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse('${AppConstants.baseUrl}$endpoint'),
-        headers: headers,
-      ).timeout(const Duration(seconds: 10));
+  List<String> get _candidateUrls => [
+        AppConstants.baseUrl,
+        'http://127.0.0.1:8000/api',
+        'http://10.133.242.102:8000/api',
+      ];
 
-      return _handleResponse(response);
-    } on SocketException catch (_) {
-      throw const SocketException("Network unavailable. Switched to offline mode.");
-    } catch (e) {
-      rethrow;
+  Future<dynamic> get(String endpoint) async {
+    final headers = await _getHeaders();
+    SocketException? lastException;
+
+    for (final baseUrl in _candidateUrls) {
+      try {
+        final response = await http.get(
+          Uri.parse('$baseUrl$endpoint'),
+          headers: headers,
+        ).timeout(const Duration(seconds: 4));
+
+        return _handleResponse(response);
+      } on SocketException catch (e) {
+        lastException = e;
+      } catch (e) {
+        rethrow;
+      }
     }
+    throw lastException ?? const SocketException("Network unavailable. Switched to offline mode.");
   }
 
   Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}$endpoint'),
-        headers: headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 10));
+    final headers = await _getHeaders();
+    SocketException? lastException;
 
-      return _handleResponse(response);
-    } on SocketException catch (_) {
-      throw const SocketException("Network unavailable. Queued for offline sync.");
-    } catch (e) {
-      rethrow;
+    for (final baseUrl in _candidateUrls) {
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl$endpoint'),
+          headers: headers,
+          body: jsonEncode(body),
+        ).timeout(const Duration(seconds: 4));
+
+        return _handleResponse(response);
+      } on SocketException catch (e) {
+        lastException = e;
+      } catch (e) {
+        rethrow;
+      }
     }
+    throw lastException ?? const SocketException("Network unavailable. Queued for offline sync.");
   }
 
   dynamic _handleResponse(http.Response response) {
