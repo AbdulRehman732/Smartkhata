@@ -24,10 +24,58 @@ class SmartKhataApp extends StatelessWidget {
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: AppConstants.darkBg,
-        primaryColor: AppConstants.primaryGreen,
-        textTheme: GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme),
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: AppConstants.creamBg,
+        primaryColor: AppConstants.deepEmerald,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: AppConstants.deepEmerald,
+          primary: AppConstants.deepEmerald,
+          secondary: AppConstants.warmSage,
+          surface: AppConstants.surfaceWhite,
+          background: AppConstants.creamBg,
+        ),
+        textTheme: GoogleFonts.interTextTheme(ThemeData.light().textTheme).copyWith(
+          displayLarge: GoogleFonts.instrumentSerif(color: AppConstants.charcoal, fontWeight: FontWeight.bold),
+          displayMedium: GoogleFonts.instrumentSerif(color: AppConstants.charcoal, fontWeight: FontWeight.bold),
+          headlineLarge: GoogleFonts.instrumentSerif(color: AppConstants.charcoal, fontWeight: FontWeight.bold),
+          headlineMedium: GoogleFonts.instrumentSerif(color: AppConstants.charcoal, fontWeight: FontWeight.bold),
+          titleLarge: GoogleFonts.instrumentSerif(color: AppConstants.charcoal, fontWeight: FontWeight.bold, fontSize: 24),
+        ),
+        appBarTheme: AppBarTheme(
+          backgroundColor: AppConstants.creamBg,
+          elevation: 0,
+          iconTheme: const IconThemeData(color: AppConstants.charcoal),
+          titleTextStyle: GoogleFonts.instrumentSerif(
+            color: AppConstants.charcoal,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        cardTheme: CardThemeData(
+          color: AppConstants.surfaceWhite,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+            side: const BorderSide(color: AppConstants.softBorder, width: 1),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: AppConstants.surfaceWhite,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(AppConstants.inputRadius),
+            borderSide: const BorderSide(color: AppConstants.softBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(AppConstants.inputRadius),
+            borderSide: const BorderSide(color: AppConstants.softBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(AppConstants.inputRadius),
+            borderSide: const BorderSide(color: AppConstants.deepEmerald, width: 1.5),
+          ),
+        ),
         useMaterial3: true,
       ),
       home: isLoggedIn ? const DashboardScreen() : const LoginScreen(),
