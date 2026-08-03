@@ -3,11 +3,13 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.pyrefly]
+python-executable = "C:/Users/aar25/AppData/Local/Programs/Python/Python313/python.exe"
 site-packages = ["C:/Users/aar25/AppData/Local/Programs/Python/Python313/Lib/site-packages"]
 search-paths = ["C:/Users/aar25/AppData/Local/Programs/Python/Python313/Lib/site-packages", "."]
 extra-paths = ["C:/Users/aar25/AppData/Local/Programs/Python/Python313/Lib/site-packages"]
 
 [tool.pyright]
+pythonPath = "C:/Users/aar25/AppData/Local/Programs/Python/Python313/python.exe"
 extraPaths = ["C:/Users/aar25/AppData/Local/Programs/Python/Python313/Lib/site-packages"]
 
 [tool.pytest.ini_options]
