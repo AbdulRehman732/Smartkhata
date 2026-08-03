@@ -3,5 +3,9 @@
   "site_packages": [
     "C:\\Users\\aar25\\Desktop\\FYP\\.venv\\Lib\\site-packages"
   ],
-  "python_version": "3.13"
+  "python_version": "3.13",
+  "ignore": [
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**"
+  ]
 }
