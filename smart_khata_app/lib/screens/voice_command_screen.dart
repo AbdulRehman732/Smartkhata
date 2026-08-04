@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../core/api_client.dart';
 import '../core/constants.dart';
 
@@ -12,14 +13,18 @@ class VoiceCommandScreen extends StatefulWidget {
 
 class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
   final _promptController = TextEditingController(text: 'چاول کا اسٹاک چیک کرو');
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
+  bool _speechAvailable = false;
   bool _isProcessing = false;
-  String _selectedLanguage = 'Urdu';
+  String _selectedLanguage = 'Urdu'; // 'Urdu', 'English', 'Punjabi'
   Map<String, dynamic>? _responseResult;
 
   @override
   void initState() {
     super.initState();
-    // Default demo intent result matching design 3
+    _speech = stt.SpeechToText();
+    _initSpeech();
     _responseResult = {
       'intent': 'CHECK_STOCK',
       'reply': 'Basmati Rice (48 kg) - In stock',
@@ -29,12 +34,84 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
     };
   }
 
+  Future<void> _initSpeech() async {
+    try {
+      bool available = await _speech.initialize(
+        onStatus: (status) {
+          if (status == 'done' || status == 'notListening') {
+            if (_isListening) {
+              setState(() => _isListening = false);
+              if (_promptController.text.trim().isNotEmpty) {
+                _sendTextCommand(_promptController.text);
+              }
+            }
+          }
+        },
+        onError: (errorNotification) {
+          setState(() => _isListening = false);
+        },
+      );
+      setState(() {
+        _speechAvailable = available;
+      });
+    } catch (_) {
+      setState(() {
+        _speechAvailable = false;
+      });
+    }
+  }
+
+  void _toggleListening() async {
+    if (_isListening) {
+      await _speech.stop();
+      setState(() => _isListening = false);
+      if (_promptController.text.trim().isNotEmpty) {
+        _sendTextCommand(_promptController.text);
+      }
+    } else {
+      if (!_speechAvailable) {
+        bool reinit = await _speech.initialize();
+        if (!reinit) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Microphone permission not granted or speech recognition unavailable.'),
+              backgroundColor: AppConstants.alertRed,
+            ),
+          );
+          return;
+        }
+      }
+
+      String locale = 'ur_PK';
+      if (_selectedLanguage == 'English') {
+        locale = 'en_US';
+      } else if (_selectedLanguage == 'Punjabi') {
+        locale = 'ur_PK'; // Urdu/Punjabi ASR engine locale
+      }
+
+      setState(() {
+        _isListening = true;
+      });
+
+      _speech.listen(
+        localeId: locale,
+        onResult: (result) {
+          setState(() {
+            _promptController.text = result.recognizedWords;
+          });
+        },
+      );
+    }
+  }
+
   Future<void> _sendTextCommand([String? overrideText]) async {
     final text = (overrideText ?? _promptController.text).trim();
     if (text.isEmpty) return;
 
     setState(() {
       _isProcessing = true;
+      _promptController.text = text;
     });
 
     try {
@@ -65,19 +142,13 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Voice Command',
+          'Voice Command System',
           style: GoogleFonts.instrumentSerif(
             color: AppConstants.charcoal,
             fontSize: 26,
             fontWeight: FontWeight.bold,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.info_outline_rounded, color: AppConstants.charcoal),
-            onPressed: () {},
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
@@ -94,45 +165,52 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
                 _buildLangChip('Punjabi', _selectedLanguage == 'Punjabi'),
               ],
             ),
-            const SizedBox(height: 36),
+            const SizedBox(height: 28),
 
-            // 2. Central Mic Recording Animation Container
+            // 2. Central Mic Recording Button & Pulse Visualizer
             GestureDetector(
-              onTap: () => _sendTextCommand('چاول کا اسٹاک چیک کرو'),
-              child: Container(
-                width: 160,
-                height: 160,
+              onTap: _toggleListening,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                width: _isListening ? 180 : 150,
+                height: _isListening ? 180 : 150,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: AppConstants.deepEmerald.withValues(alpha: 0.06),
+                  color: _isListening
+                      ? AppConstants.alertRed.withOpacity(0.15)
+                      : AppConstants.deepEmerald.withOpacity(0.08),
                 ),
                 child: Center(
                   child: Container(
-                    width: 120,
-                    height: 120,
+                    width: 110,
+                    height: 110,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: AppConstants.deepEmerald.withValues(alpha: 0.12),
+                      color: _isListening
+                          ? AppConstants.alertRed.withOpacity(0.3)
+                          : AppConstants.deepEmerald.withOpacity(0.18),
                     ),
                     child: Center(
                       child: Container(
-                        width: 80,
-                        height: 80,
-                        decoration: const BoxDecoration(
+                        width: 76,
+                        height: 76,
+                        decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: AppConstants.surfaceWhite,
+                          color: _isListening ? AppConstants.alertRed : AppConstants.deepEmerald,
                           boxShadow: [
                             BoxShadow(
-                              color: Color.fromRGBO(0, 0, 0, 0.08),
-                              blurRadius: 12,
-                              offset: Offset(0, 4),
+                              color: _isListening
+                                  ? AppConstants.alertRed.withOpacity(0.4)
+                                  : AppConstants.deepEmerald.withOpacity(0.3),
+                              blurRadius: 14,
+                              offset: const Offset(0, 4),
                             ),
                           ],
                         ),
-                        child: const Icon(
-                          Icons.mic_rounded,
+                        child: Icon(
+                          _isListening ? Icons.mic : Icons.mic_none_rounded,
                           size: 38,
-                          color: AppConstants.deepEmerald,
+                          color: Colors.white,
                         ),
                       ),
                     ),
@@ -140,21 +218,46 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             Text(
-              'Tap mic to start / stop',
+              _isListening ? 'Listening... Speak now' : 'Tap microphone to speak command',
               style: GoogleFonts.inter(
-                color: AppConstants.deepEmerald,
+                color: _isListening ? AppConstants.alertRed : AppConstants.deepEmerald,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 28),
 
-            // 3. Speech Transcription Card ("You said")
+            // 3. Quick Sample Voice Commands
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Sample Commands (Tap to test):',
+                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppConstants.textMuted),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildQuickCommand('چاول کا اسٹاک چیک کرو'),
+                  const SizedBox(width: 8),
+                  _buildQuickCommand('Muhammad Ali ne 500 rupay jamah karwaye'),
+                  const SizedBox(width: 8),
+                  _buildQuickCommand('Ali ko 2 kilo chawal credit per becho'),
+                  const SizedBox(width: 8),
+                  _buildQuickCommand('Ali Cashier ki aaj ki hazari lagao'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // 4. Speech Transcription Card ("You said")
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: AppConstants.surfaceWhite,
                 borderRadius: BorderRadius.circular(16),
@@ -163,37 +266,38 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'You said',
-                    style: GoogleFonts.inter(
-                      color: AppConstants.textMuted,
-                      fontSize: 13,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Transcribed Command',
+                        style: GoogleFonts.inter(
+                          color: AppConstants.textMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.send_rounded, color: AppConstants.deepEmerald, size: 20),
+                        onPressed: () => _sendTextCommand(),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    _promptController.text,
-                    style: GoogleFonts.notoNastaliqUrdu(
-                      color: AppConstants.charcoal,
-                      fontSize: 26,
-                      height: 1.5,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Check rice stock',
-                    style: GoogleFonts.inter(
-                      color: AppConstants.textMuted,
-                      fontSize: 13,
+                  TextField(
+                    controller: _promptController,
+                    maxLines: 2,
+                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      hintText: 'Speak or type your command here...',
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
-            // 4. Action Result Card
+            // 5. Action Result Card
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(18),
@@ -206,79 +310,51 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Result',
+                    'AI Execution Result',
                     style: GoogleFonts.inter(
                       color: AppConstants.textMuted,
-                      fontSize: 13,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                   const SizedBox(height: 12),
                   if (_isProcessing)
-                    const Center(child: CircularProgressIndicator(color: AppConstants.deepEmerald))
-                  else
-                    Row(
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: CircularProgressIndicator(color: AppConstants.deepEmerald),
+                      ),
+                    )
+                  else if (_responseResult != null)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 50,
-                          height: 50,
-                          decoration: BoxDecoration(
-                            color: AppConstants.creamBg,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.shopping_bag_outlined,
-                            color: AppConstants.deepEmerald,
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _responseResult?['product_name'] ?? 'Basmati Rice (48 kg)',
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppConstants.softGreenChip,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                _responseResult!['intent'] ?? 'EXECUTED',
                                 style: GoogleFonts.inter(
-                                  color: AppConstants.charcoal,
+                                  color: AppConstants.deepEmerald,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 16,
+                                  fontSize: 12,
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: AppConstants.softGreenChip,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.check_circle, color: AppConstants.deepEmerald, size: 14),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'In stock',
-                                          style: GoogleFonts.inter(
-                                            color: AppConstants.deepEmerald,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _responseResult?['time'] ?? 'Last updated today 8:30 AM',
-                                style: GoogleFonts.inter(
-                                  color: AppConstants.textMuted,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          _responseResult!['reply'] ?? 'Action completed successfully.',
+                          style: GoogleFonts.inter(
+                            color: AppConstants.charcoal,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
                           ),
                         ),
                       ],
@@ -304,23 +380,28 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
             color: isSelected ? AppConstants.deepEmerald : AppConstants.softBorder,
           ),
         ),
-        child: Row(
-          children: [
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                color: isSelected ? Colors.white : AppConstants.charcoal,
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
-            if (isSelected) ...[
-              const SizedBox(width: 4),
-              const Icon(Icons.check, color: Colors.white, size: 14),
-            ],
-          ],
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            color: isSelected ? Colors.white : AppConstants.charcoal,
+            fontSize: 13,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+          ),
         ),
       ),
     );
   }
+
+  Widget _buildQuickCommand(String text) {
+    return ActionChip(
+      label: Text(text, style: GoogleFonts.inter(fontSize: 12)),
+      backgroundColor: AppConstants.surfaceWhite,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppConstants.softBorder),
+      ),
+      onPressed: () => _sendTextCommand(text),
+    );
+  }
 }
+
