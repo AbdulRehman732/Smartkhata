@@ -38,6 +38,84 @@ async def lifespan(app: FastAPI):
             "role": "employee",
             "employee_id": "EMP-101"
         })
+
+    # Seed Sample Kiryana Products if empty
+    prod_count = await db["products"].count_documents({})
+    if prod_count == 0:
+        await db["products"].insert_many([
+            {
+                "_id": str(uuid.uuid4()),
+                "id": "prod-001",
+                "name": "Basmati Rice (Super Kernal)",
+                "urdu_name": "چاول super kernel",
+                "category": "Grains",
+                "sale_price": 320.0,
+                "cost_price": 280.0,
+                "current_stock": 50.0,
+                "unit": "kg",
+                "min_stock_alert": 10.0
+            },
+            {
+                "_id": str(uuid.uuid4()),
+                "id": "prod-002",
+                "name": "Chakki Atta (Wheat Flour)",
+                "urdu_name": "گندم کا آٹا",
+                "category": "Flour",
+                "sale_price": 140.0,
+                "cost_price": 120.0,
+                "current_stock": 100.0,
+                "unit": "kg",
+                "min_stock_alert": 15.0
+            },
+            {
+                "_id": str(uuid.uuid4()),
+                "id": "prod-003",
+                "name": "White Sugar",
+                "urdu_name": "چینی",
+                "category": "Grocery",
+                "sale_price": 150.0,
+                "cost_price": 135.0,
+                "current_stock": 80.0,
+                "unit": "kg",
+                "min_stock_alert": 20.0
+            }
+        ])
+
+    # Seed Sample Customers if empty
+    cust_count = await db["customers"].count_documents({})
+    if cust_count == 0:
+        await db["customers"].insert_many([
+            {
+                "_id": str(uuid.uuid4()),
+                "id": "cust-001",
+                "name": "Muhammad Ali",
+                "phone": "03001234567",
+                "address": "House 12, Block A",
+                "balance_due": 1200.0,
+                "credit_limit": 5000.0
+            },
+            {
+                "_id": str(uuid.uuid4()),
+                "id": "cust-002",
+                "name": "Tariq Mahmood",
+                "phone": "03129876543",
+                "address": "Shop 4, Main Bazaar",
+                "balance_due": 0.0,
+                "credit_limit": 10000.0
+            }
+        ])
+
+    # Seed Sample Employees if empty
+    emp_count = await db["employees"].count_documents({})
+    if emp_count == 0:
+        await db["employees"].insert_one({
+            "_id": str(uuid.uuid4()),
+            "id": "EMP-101",
+            "name": "Ali Cashier",
+            "role": "Cashier",
+            "phone": "03211112233",
+            "monthly_salary": 25000.0
+        })
     yield
 
 app = FastAPI(
