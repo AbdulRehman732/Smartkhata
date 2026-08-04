@@ -34,22 +34,24 @@ def transcribe_audio_file(audio_file_path: str) -> str:
     try:
         import speech_recognition as sr  # type: ignore
         recognizer = sr.Recognizer()
-        with sr.AudioFile(audio_file_path) as source:
-            audio_data = recognizer.record(source)
-            # Try Urdu first
-            try:
-                urdu_text = recognizer.recognize_google(audio_data, language="ur-PK")
-                if urdu_text and len(urdu_text.strip()) > 2:
-                    return urdu_text.strip()
-            except Exception:
-                pass
-            # Try English
-            try:
-                eng_text = recognizer.recognize_google(audio_data, language="en-US")
-                if eng_text and len(eng_text.strip()) > 2:
-                    return eng_text.strip()
-            except Exception:
-                pass
+        rec_google = getattr(recognizer, "recognize_google", None)
+        if rec_google:
+            with sr.AudioFile(audio_file_path) as source:
+                audio_data = recognizer.record(source)
+                # Try Urdu first
+                try:
+                    urdu_text = rec_google(audio_data, language="ur-PK")
+                    if urdu_text and len(str(urdu_text).strip()) > 2:
+                        return str(urdu_text).strip()
+                except Exception:
+                    pass
+                # Try English
+                try:
+                    eng_text = rec_google(audio_data, language="en-US")
+                    if eng_text and len(str(eng_text).strip()) > 2:
+                        return str(eng_text).strip()
+                except Exception:
+                    pass
     except Exception:
         pass
 
