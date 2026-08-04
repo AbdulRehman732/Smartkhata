@@ -30,28 +30,30 @@ class ApiClient {
 
   Future<dynamic> get(String endpoint) async {
     final headers = await _getHeaders();
-    SocketException? lastException;
+    Exception? lastException;
 
     for (final baseUrl in _candidateUrls) {
       try {
         final response = await http.get(
           Uri.parse('$baseUrl$endpoint'),
           headers: headers,
-        ).timeout(const Duration(seconds: 4));
+        ).timeout(const Duration(seconds: 5));
 
         return _handleResponse(response);
       } on SocketException catch (e) {
+        lastException = e;
+      } on TimeoutException catch (e) {
         lastException = e;
       } catch (e) {
         rethrow;
       }
     }
-    throw lastException ?? const SocketException("Network unavailable. Switched to offline mode.");
+    throw SocketException("Backend network timeout. Ensure phone & PC are on the same Wi-Fi network or backend is online.");
   }
 
   Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
     final headers = await _getHeaders();
-    SocketException? lastException;
+    Exception? lastException;
 
     for (final baseUrl in _candidateUrls) {
       try {
@@ -59,16 +61,18 @@ class ApiClient {
           Uri.parse('$baseUrl$endpoint'),
           headers: headers,
           body: jsonEncode(body),
-        ).timeout(const Duration(seconds: 4));
+        ).timeout(const Duration(seconds: 5));
 
         return _handleResponse(response);
       } on SocketException catch (e) {
+        lastException = e;
+      } on TimeoutException catch (e) {
         lastException = e;
       } catch (e) {
         rethrow;
       }
     }
-    throw lastException ?? const SocketException("Network unavailable. Queued for offline sync.");
+    throw SocketException("Backend network timeout. Ensure phone & PC are on the same Wi-Fi network or backend is online.");
   }
 
   dynamic _handleResponse(http.Response response) {
