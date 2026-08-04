@@ -69,5 +69,26 @@ void main() {
       expect(order.amountAddedToKhata, equals(180.0));
       expect(order.lineItems.length, equals(1));
     });
+    test('Sync response per-order status filtering logic', () {
+      final syncResponse = {
+        'results': [
+          {'client_id': 'ord_1', 'entity_type': 'order', 'status': 'success'},
+          {'client_id': 'ord_2', 'entity_type': 'order', 'status': 'failed', 'message': 'Stock out'},
+        ]
+      };
+
+      final results = syncResponse['results'] as List;
+      final successfulClientIds = <String>{};
+      for (var r in results) {
+        if (r is Map && r['entity_type'] == 'order' && r['status'] == 'success') {
+          if (r['client_id'] != null) {
+            successfulClientIds.add(r['client_id'].toString());
+          }
+        }
+      }
+
+      expect(successfulClientIds.contains('ord_1'), isTrue);
+      expect(successfulClientIds.contains('ord_2'), isFalse);
+    });
   });
 }

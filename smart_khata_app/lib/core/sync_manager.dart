@@ -34,16 +34,39 @@ class SyncManager {
       }
 
       try {
-        await _apiClient.post('/sync/push', {
+        final pushRes = await _apiClient.post('/sync/push', {
           'orders': orderList,
           'attendance': attList,
         });
 
-        // Clear successfully pushed items from local queue
-        for (var o in pendingOrders) {
-          await _dbHelper.removePendingOrder(o['client_id']);
-          pushedOrders++;
+        // Per-order status check: ONLY clear successfully pushed orders from local queue
+        if (pushRes is Map && pushRes['results'] is List) {
+          final results = pushRes['results'] as List;
+          final successfulClientIds = <String>{};
+
+          for (var r in results) {
+            if (r is Map && r['entity_type'] == 'order' && r['status'] == 'success') {
+              if (r['client_id'] != null) {
+                successfulClientIds.add(r['client_id'].toString());
+              }
+            }
+          }
+
+          for (var o in pendingOrders) {
+            final cid = o['client_id'].toString();
+            if (successfulClientIds.contains(cid)) {
+              await _dbHelper.removePendingOrder(cid);
+              pushedOrders++;
+            }
+          }
+        } else {
+          // Fallback if response format is direct
+          for (var o in pendingOrders) {
+            await _dbHelper.removePendingOrder(o['client_id']);
+            pushedOrders++;
+          }
         }
+
         await _dbHelper.clearPendingAttendance();
         pushedAttendance += pendingAtt.length;
       } catch (e) {

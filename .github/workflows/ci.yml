@@ -1,0 +1,52 @@
+name: AI Smart Khata CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-tests:
+    name: FastAPI Backend Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install fastapi uvicorn motor pydantic scikit-learn numpy reportlab python-multipart pytest httpx SpeechRecognition pydub
+
+      - name: Run Backend Pytest Suite
+        run: |
+          cd smart_khata_backend
+          pytest
+
+  frontend-tests:
+    name: Flutter Mobile Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install Dependencies & Run Tests
+        run: |
+          cd smart_khata_app
+          flutter pub get
+          flutter test

@@ -134,6 +134,8 @@ class EmployeeCreate(BaseModel):
     salary_type: str # monthly, daily
     salary_rate: float
     phone: str
+    casual_leave_quota: int = 12
+    sick_leave_quota: int = 8
     create_login: bool = False
     username: Optional[str] = None
     password: Optional[str] = None
@@ -145,9 +147,33 @@ class EmployeeResponse(BaseModel):
     salary_type: str
     salary_rate: float
     phone: str
+    casual_leave_quota: int = 12
+    sick_leave_quota: int = 8
+    leaves_taken: int = 0
+    remaining_casual_leaves: int = 12
+    remaining_sick_leaves: int = 8
     active: bool = True
     user_account_id: Optional[str] = None
     updated_at: str
+
+class LeaveRequestCreate(BaseModel):
+    employee_id: str
+    leave_type: str # casual, sick
+    start_date: str # YYYY-MM-DD
+    end_date: str # YYYY-MM-DD
+    reason: str
+
+class LeaveRequestResponse(BaseModel):
+    id: str
+    employee_id: str
+    employee_name: str
+    leave_type: str
+    start_date: str
+    end_date: str
+    days_requested: int
+    status: str # pending, approved, rejected
+    reason: str
+    created_at: str
 
 class AttendanceMark(BaseModel):
     employee_id: str

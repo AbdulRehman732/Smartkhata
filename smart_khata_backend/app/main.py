@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import (
     auth, inventory, suppliers, customers, orders,
     employees, attendance, payroll, cashbook, reports,
-    forecast, ai, sync, invoice, backup
+    forecast, restock, ai, sync, invoice, backup
 )
 
 app = FastAPI(
@@ -33,6 +33,7 @@ app.include_router(payroll.router)
 app.include_router(cashbook.router)
 app.include_router(reports.router)
 app.include_router(forecast.router)
+app.include_router(restock.router)
 app.include_router(ai.router)
 app.include_router(sync.router)
 app.include_router(invoice.router)
