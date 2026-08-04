@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:flutter_tts/flutter_tts.dart';
 import '../core/api_client.dart';
 import '../core/constants.dart';
 
@@ -14,6 +15,7 @@ class VoiceCommandScreen extends StatefulWidget {
 class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
   final _promptController = TextEditingController(text: 'چاول کا اسٹاک چیک کرو');
   late stt.SpeechToText _speech;
+  late FlutterTts _flutterTts;
   bool _isListening = false;
   bool _speechAvailable = false;
   bool _isProcessing = false;
@@ -24,6 +26,8 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
   void initState() {
     super.initState();
     _speech = stt.SpeechToText();
+    _flutterTts = FlutterTts();
+    _initTts();
     _initSpeech();
     _responseResult = {
       'intent': 'CHECK_STOCK',
@@ -32,6 +36,29 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
       'status': 'In stock',
       'time': 'Last updated today 8:30 AM',
     };
+  }
+
+  Future<void> _initTts() async {
+    try {
+      await _flutterTts.setSpeechRate(0.5);
+      await _flutterTts.setVolume(1.0);
+      await _flutterTts.setPitch(1.0);
+    } catch (_) {}
+  }
+
+  Future<void> _speakResponse(String text) async {
+    if (text.isEmpty) return;
+    try {
+      if (_selectedLanguage == 'Urdu' || _selectedLanguage == 'Punjabi') {
+        await _flutterTts.setLanguage('ur-PK');
+      } else {
+        await _flutterTts.setLanguage('en-US');
+      }
+      final cleanText = text.replaceAll(RegExp(r'[^\w\s\.\,\:\-]'), '').trim();
+      if (cleanText.isNotEmpty) {
+        await _flutterTts.speak(cleanText);
+      }
+    } catch (_) {}
   }
 
   Future<void> _initSpeech() async {
@@ -121,6 +148,11 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
         _responseResult = res;
         _isProcessing = false;
       });
+
+      final replyText = res['reply'] as String?;
+      if (replyText != null && replyText.isNotEmpty) {
+        _speakResponse(replyText);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

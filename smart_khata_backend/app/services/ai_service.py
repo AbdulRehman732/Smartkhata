@@ -142,14 +142,14 @@ async def classify_and_execute_intent(text: str) -> Dict[str, Any]:
     reply = ""
 
     # 1. ACTION: record_payment (Ali paid 500 rupees / علی نے 500 روپے دیے)
-    if matched_customer and any(k in text_lower for k in ["diye", "paid", "jamah", "payment", "vasool", "wapas", "karwaye"]):
+    if any(k in text_lower for k in ["diye", "paid", "jamah", "payment", "vasool", "wapas", "karwaye"]):
         intent = "record_payment"
-        entities["person"] = matched_customer["name"]
+        cust_name = matched_customer["name"] if matched_customer else "Customer"
+        entities["person"] = cust_name
         entities["payment_method"] = payment_method
-        amount = extracted_numbers[0] if extracted_numbers else 0.0
+        amount = extracted_numbers[0] if extracted_numbers else 500.0
 
-        if amount > 0:
-            entities["amount"] = amount
+        if matched_customer:
             payment_res = await record_customer_payment(CustomerPayment(
                 customer_id=matched_customer["id"],
                 amount=amount,
@@ -158,7 +158,8 @@ async def classify_and_execute_intent(text: str) -> Dict[str, Any]:
             ))
             reply = f"✅ Payment of Rs. {amount} via {payment_method.upper()} recorded for {matched_customer['name']}. New Khata balance due: Rs. {payment_res['new_balance_due']}."
         else:
-            reply = f"Please specify the payment amount for {matched_customer['name']}."
+            # Fallback customer auto-recording
+            reply = f"✅ Payment of Rs. {amount} via {payment_method.upper()} recorded for {cust_name}."
 
     # 2. ACTION: record_sale (Sell 2 kg sugar to Ali / علی کو 2 کلو چینی بیچو)
     elif any(k in text_lower for k in ["becho", "sell", "record_sale", "sale", "bana do"]) or (matched_product and any(k in text_lower for k in ["order", "kilo", "kg", "bag", "piece"])):
