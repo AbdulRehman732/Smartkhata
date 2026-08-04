@@ -3,9 +3,14 @@
   "site_packages": [
     "C:\\Users\\aar25\\Desktop\\FYP\\.venv\\Lib\\site-packages"
   ],
+  "search_path": [
+    "C:\\Users\\aar25\\Desktop\\FYP\\smart_khata_backend",
+    "C:\\Users\\aar25\\Desktop\\FYP\\.venv\\Lib\\site-packages"
+  ],
   "python_version": "3.13",
   "ignore": [
     "**/__pyrefly_virtual__/**",
-    "**/inmemory/**"
+    "**/inmemory/**",
+    "C:/__pyrefly_virtual__/**"
   ]
 }
