@@ -11,7 +11,7 @@ class AppConstants {
       return 'http://127.0.0.1:8000/api';
     }
     // Physical mobile device IP fallback or ADB reverse localhost
-    return 'http://10.133.242.102:8000/api';
+    return 'http://192.168.100.12:8000/api';
   }
 
   // Storage Keys
