@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'constants.dart';
 
 class ApiClient {
+  // ── Token helper ──────────────────────────────────────────────────────────
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(AppConstants.tokenKey);
@@ -23,68 +24,155 @@ class ApiClient {
     return headers;
   }
 
+  // ── Candidate base URLs (tried in order) ─────────────────────────────────
   List<String> get _candidateUrls => [
         AppConstants.baseUrl,
         'http://127.0.0.1:8000/api',
-        'http://10.133.242.102:8000/api',
+        'http://10.0.2.2:8000/api', // Android emulator localhost alias
       ];
 
+  // ── GET ───────────────────────────────────────────────────────────────────
   Future<dynamic> get(String endpoint) async {
     final headers = await _getHeaders();
-    Exception? lastException;
 
-    for (final baseUrl in _candidateUrls) {
+    for (final base in _candidateUrls) {
       try {
-        final response = await http.get(
-          Uri.parse('$baseUrl$endpoint'),
-          headers: headers,
-        ).timeout(const Duration(seconds: 5));
-
-        return _handleResponse(response);
-      } on SocketException catch (e) {
-        lastException = e;
-      } on TimeoutException catch (e) {
-        lastException = e;
+        final res = await http
+            .get(Uri.parse('$base$endpoint'), headers: headers)
+            .timeout(const Duration(seconds: 8));
+        return _handleResponse(res);
+      } on SocketException catch (_) {
+        continue;
+      } on TimeoutException catch (_) {
+        continue;
       } catch (e) {
         rethrow;
       }
     }
-    throw SocketException("Backend network timeout. Ensure phone & PC are on the same Wi-Fi network or backend is online.");
+    throw const SocketException(
+        'Backend unreachable. Check Wi-Fi / USB debugging or run the backend server.');
   }
 
+  // ── POST ──────────────────────────────────────────────────────────────────
   Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
     final headers = await _getHeaders();
-    Exception? lastException;
 
-    for (final baseUrl in _candidateUrls) {
+    for (final base in _candidateUrls) {
       try {
-        final response = await http.post(
-          Uri.parse('$baseUrl$endpoint'),
-          headers: headers,
-          body: jsonEncode(body),
-        ).timeout(const Duration(seconds: 5));
-
-        return _handleResponse(response);
-      } on SocketException catch (e) {
-        lastException = e;
-      } on TimeoutException catch (e) {
-        lastException = e;
+        final res = await http
+            .post(
+              Uri.parse('$base$endpoint'),
+              headers: headers,
+              body: jsonEncode(body),
+            )
+            .timeout(const Duration(seconds: 10));
+        return _handleResponse(res);
+      } on SocketException catch (_) {
+        continue;
+      } on TimeoutException catch (_) {
+        continue;
       } catch (e) {
         rethrow;
       }
     }
-    throw SocketException("Backend network timeout. Ensure phone & PC are on the same Wi-Fi network or backend is online.");
+    throw const SocketException('Backend unreachable.');
   }
 
+  // ── PUT ───────────────────────────────────────────────────────────────────
+  Future<dynamic> put(String endpoint, Map<String, dynamic> body) async {
+    final headers = await _getHeaders();
+
+    for (final base in _candidateUrls) {
+      try {
+        final res = await http
+            .put(
+              Uri.parse('$base$endpoint'),
+              headers: headers,
+              body: jsonEncode(body),
+            )
+            .timeout(const Duration(seconds: 10));
+        return _handleResponse(res);
+      } on SocketException catch (_) {
+        continue;
+      } on TimeoutException catch (_) {
+        continue;
+      } catch (e) {
+        rethrow;
+      }
+    }
+    throw const SocketException('Backend unreachable.');
+  }
+
+  // ── DELETE ────────────────────────────────────────────────────────────────
+  Future<dynamic> delete(String endpoint) async {
+    final headers = await _getHeaders();
+
+    for (final base in _candidateUrls) {
+      try {
+        final res = await http
+            .delete(Uri.parse('$base$endpoint'), headers: headers)
+            .timeout(const Duration(seconds: 8));
+        return _handleResponse(res);
+      } on SocketException catch (_) {
+        continue;
+      } on TimeoutException catch (_) {
+        continue;
+      } catch (e) {
+        rethrow;
+      }
+    }
+    throw const SocketException('Backend unreachable.');
+  }
+
+  // ── POST Multipart (audio upload for Whisper STT) ─────────────────────────
+  /// Uploads an audio file to the backend's Whisper STT endpoint.
+  /// [endpoint] — e.g. '/ai/stt-intent'
+  /// [filePath]  — absolute path to the recorded audio file on the device
+  Future<dynamic> postAudioFile(String endpoint, String filePath) async {
+    final token = await getToken();
+
+    for (final base in _candidateUrls) {
+      try {
+        final uri = Uri.parse('$base$endpoint');
+        final request = http.MultipartRequest('POST', uri);
+
+        if (token != null && token.isNotEmpty) {
+          request.headers['Authorization'] = 'Bearer $token';
+        }
+
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'file',
+            filePath,
+            filename: filePath.split(Platform.pathSeparator).last,
+          ),
+        );
+
+        final streamed = await request.send().timeout(
+          const Duration(seconds: AppConstants.voiceApiTimeoutSeconds),
+        );
+        final response = await http.Response.fromStream(streamed);
+        return _handleResponse(response);
+      } on SocketException catch (_) {
+        continue;
+      } on TimeoutException catch (_) {
+        continue;
+      } catch (e) {
+        rethrow;
+      }
+    }
+    throw const SocketException('Backend unreachable for audio upload.');
+  }
+
+  // ── Response handler ──────────────────────────────────────────────────────
   dynamic _handleResponse(http.Response response) {
     final body = jsonDecode(response.body);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return body;
-    } else {
-      final detail = body is Map && body.containsKey('detail')
-          ? body['detail']
-          : 'Server Error (${response.statusCode})';
-      throw HttpException(detail.toString());
     }
+    final detail = (body is Map && body.containsKey('detail'))
+        ? body['detail']
+        : 'Server Error (${response.statusCode})';
+    throw HttpException(detail.toString());
   }
 }

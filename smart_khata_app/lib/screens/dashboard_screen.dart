@@ -561,7 +561,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     height: 4,
                     margin: const EdgeInsets.only(bottom: 20),
                     decoration: BoxDecoration(
-                      color: AppConstants.textMuted.withOpacity(0.3),
+                      color: AppConstants.textMuted.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),

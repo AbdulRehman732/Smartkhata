@@ -6,6 +6,8 @@ from app.routers import (
     employees, attendance, payroll, cashbook, reports,
     forecast, restock, ai, sync, invoice, backup
 )
+from app.models.schemas import utc_now_iso
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -49,11 +51,13 @@ async def lifespan(app: FastAPI):
                 "name": "Basmati Rice (Super Kernal)",
                 "urdu_name": "چاول super kernel",
                 "category": "Grains",
-                "sale_price": 320.0,
-                "cost_price": 280.0,
+                "selling_price": 320.0,
+                "buying_price": 280.0,
                 "current_stock": 50.0,
                 "unit": "kg",
-                "min_stock_alert": 10.0
+                "low_stock_threshold": 10.0,
+                "supplier_id": None,
+                "updated_at": utc_now_iso()
             },
             {
                 "_id": str(uuid.uuid4()),
@@ -61,11 +65,13 @@ async def lifespan(app: FastAPI):
                 "name": "Chakki Atta (Wheat Flour)",
                 "urdu_name": "گندم کا آٹا",
                 "category": "Flour",
-                "sale_price": 140.0,
-                "cost_price": 120.0,
+                "selling_price": 140.0,
+                "buying_price": 120.0,
                 "current_stock": 100.0,
                 "unit": "kg",
-                "min_stock_alert": 15.0
+                "low_stock_threshold": 15.0,
+                "supplier_id": None,
+                "updated_at": utc_now_iso()
             },
             {
                 "_id": str(uuid.uuid4()),
@@ -73,11 +79,41 @@ async def lifespan(app: FastAPI):
                 "name": "White Sugar",
                 "urdu_name": "چینی",
                 "category": "Grocery",
-                "sale_price": 150.0,
-                "cost_price": 135.0,
+                "selling_price": 150.0,
+                "buying_price": 135.0,
                 "current_stock": 80.0,
                 "unit": "kg",
-                "min_stock_alert": 20.0
+                "low_stock_threshold": 20.0,
+                "supplier_id": None,
+                "updated_at": utc_now_iso()
+            },
+            {
+                "_id": str(uuid.uuid4()),
+                "id": "prod-004",
+                "name": "Cooking Oil (1 Litre)",
+                "urdu_name": "کھانا پکانے کا تیل",
+                "category": "Grocery",
+                "selling_price": 470.0,
+                "buying_price": 420.0,
+                "current_stock": 40.0,
+                "unit": "litre",
+                "low_stock_threshold": 10.0,
+                "supplier_id": None,
+                "updated_at": utc_now_iso()
+            },
+            {
+                "_id": str(uuid.uuid4()),
+                "id": "prod-005",
+                "name": "Desi Ghee (500g)",
+                "urdu_name": "دیسی گھی",
+                "category": "Dairy",
+                "selling_price": 650.0,
+                "buying_price": 580.0,
+                "current_stock": 25.0,
+                "unit": "piece",
+                "low_stock_threshold": 8.0,
+                "supplier_id": None,
+                "updated_at": utc_now_iso()
             }
         ])
 
@@ -108,14 +144,38 @@ async def lifespan(app: FastAPI):
     # Seed Sample Employees if empty
     emp_count = await db["employees"].count_documents({})
     if emp_count == 0:
-        await db["employees"].insert_one({
-            "_id": str(uuid.uuid4()),
-            "id": "EMP-101",
-            "name": "Ali Cashier",
-            "role": "Cashier",
-            "phone": "03211112233",
-            "monthly_salary": 25000.0
-        })
+        await db["employees"].insert_many([
+            {
+                "_id": str(uuid.uuid4()),
+                "id": "EMP-101",
+                "name": "Ali Cashier",
+                "role_title": "Cashier",
+                "salary_type": "monthly",
+                "salary_rate": 25000.0,
+                "phone": "03211112233",
+                "casual_leave_quota": 12,
+                "sick_leave_quota": 8,
+                "leaves_taken": 0,
+                "active": True,
+                "user_account_id": None,
+                "updated_at": utc_now_iso()
+            },
+            {
+                "_id": str(uuid.uuid4()),
+                "id": "EMP-102",
+                "name": "Bilal Helper",
+                "role_title": "Helper",
+                "salary_type": "daily",
+                "salary_rate": 800.0,
+                "phone": "03329988776",
+                "casual_leave_quota": 12,
+                "sick_leave_quota": 8,
+                "leaves_taken": 0,
+                "active": True,
+                "user_account_id": None,
+                "updated_at": utc_now_iso()
+            }
+        ])
     yield
 
 app = FastAPI(

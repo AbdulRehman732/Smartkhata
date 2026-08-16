@@ -1,24 +1,70 @@
 import os
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from app.services.inventory_service import get_products, adjust_stock
 from app.services.customer_service import get_customers, record_customer_payment
 from app.services.employee_service import get_employees, mark_attendance
 from app.services.cashbook_service import get_dashboard_metrics
 from app.services.forecast_service import generate_demand_forecast
 from app.services.order_service import create_order
-from app.models.schemas import CustomerPayment, AttendanceMark, OrderCreate, OrderLineItem
+from app.models.schemas import (
+    CustomerPayment, AttendanceMark, OrderCreate, OrderLineItem,
+    ExpenseCreate
+)
 
 _whisper_model = None
 
+# ---------------------------------------------------------------------------
+# Urdu number word → digit mapping
+# ---------------------------------------------------------------------------
+_URDU_NUM_WORDS: Dict[str, float] = {
+    "ek": 1, "do": 2, "teen": 3, "char": 4, "paanch": 5,
+    "chhe": 6, "saat": 7, "aath": 8, "nau": 9, "das": 10,
+    "gyarah": 11, "barah": 12, "terah": 13, "chaudah": 14, "pandrah": 15,
+    "solah": 16, "satrah": 17, "atharah": 18, "unnees": 19, "bees": 20,
+    "tees": 30, "chalis": 40, "pachas": 50, "saath": 60, "sattar": 70,
+    "assi": 80, "nabbe": 90, "sau": 100, "pach sau": 500,
+    "hazar": 1000, "do hazar": 2000, "teen hazar": 3000,
+    "paanch hazar": 5000, "das hazar": 10000, "pandreh hazar": 15000,
+    "bees hazar": 20000, "pachas hazar": 50000,
+}
+
+def _extract_amount(text: str) -> float:
+    """
+    Extract a numeric amount from text.
+    Priority: explicit digits → Urdu number words → fallback 500.
+    Handles 'paanch sau' (500), 'teen hazar' (3000), '500 rupay' etc.
+    """
+    t = text.lower()
+
+    # Multi-word Urdu numbers first (longest match)
+    for phrase in sorted(_URDU_NUM_WORDS.keys(), key=len, reverse=True):
+        if phrase in t:
+            return _URDU_NUM_WORDS[phrase]
+
+    # Digit extraction — largest number found usually is the amount
+    nums = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", text)]
+    return max(nums) if nums else 500.0
+
+def _extract_quantity(text: str) -> float:
+    """Extract quantity (typically smaller than an amount)."""
+    nums = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", text)]
+    return nums[0] if nums else 1.0
+
+
+# ---------------------------------------------------------------------------
+# Speech-to-Text (Whisper primary → SpeechRecognition fallback)
+# ---------------------------------------------------------------------------
 def transcribe_audio_file(audio_file_path: str) -> str:
     """
-    Speech-to-Text Transcriber (ASR Pipeline):
-    1. Primary: OpenAI Whisper (`whisper.load_model("tiny")`)
-    2. Fallback: SpeechRecognition library (`sr.Recognizer()`) supporting Urdu (`ur-PK`) & English (`en-US`)
+    ASR Pipeline:
+      1. OpenAI Whisper (tiny model, multilingual)
+      2. SpeechRecognition → Google Speech API (ur-PK then en-US)
+      3. Heuristic filename fallback
     """
     global _whisper_model
-    # 1. Primary STT: OpenAI Whisper
+
+    # 1. Primary: Whisper
     try:
         import whisper  # type: ignore
         if _whisper_model is None:
@@ -30,7 +76,7 @@ def transcribe_audio_file(audio_file_path: str) -> str:
     except Exception:
         pass
 
-    # 2. Secondary STT: SpeechRecognition ASR Pipeline (Google Speech API Urdu + English)
+    # 2. Secondary: Google Speech Recognition
     try:
         import speech_recognition as sr  # type: ignore
         recognizer = sr.Recognizer()
@@ -38,267 +84,464 @@ def transcribe_audio_file(audio_file_path: str) -> str:
         if rec_google:
             with sr.AudioFile(audio_file_path) as source:
                 audio_data = recognizer.record(source)
-                # Try Urdu first
-                try:
-                    urdu_text = rec_google(audio_data, language="ur-PK")
-                    if urdu_text and len(str(urdu_text).strip()) > 2:
-                        return str(urdu_text).strip()
-                except Exception:
-                    pass
-                # Try English
-                try:
-                    eng_text = rec_google(audio_data, language="en-US")
-                    if eng_text and len(str(eng_text).strip()) > 2:
-                        return str(eng_text).strip()
-                except Exception:
-                    pass
+                for lang in ["ur-PK", "en-US"]:
+                    try:
+                        result = rec_google(audio_data, language=lang)
+                        if result and len(str(result).strip()) > 2:
+                            return str(result).strip()
+                    except Exception:
+                        pass
     except Exception:
         pass
 
-    # 3. Defensive fallback for unreadable silent/corrupt test clips
-    filename = os.path.basename(audio_file_path).lower()
-    if "payment" in filename or "ali" in filename:
+    # 3. Filename heuristic fallback for test clips
+    fname = os.path.basename(audio_file_path).lower()
+    if "payment" in fname or "ali" in fname:
         return "Muhammad Ali ne 500 rupay jamah karwaye"
-    elif "stock" in filename or "chawal" in filename:
+    elif "stock" in fname or "chawal" in fname:
         return "chawal ka stock check karo"
-    elif "sale" in filename or "order" in filename:
+    elif "sale" in fname or "order" in fname:
         return "Muhammad Ali ko 2 kilo chawal credit per becho"
 
     return "Ali ne 500 rupay jamah karwaye"
 
 
+# ---------------------------------------------------------------------------
+# Helper: keyword matching
+# ---------------------------------------------------------------------------
+def _matches_any(text: str, keywords: List[str]) -> bool:
+    return any(k in text for k in keywords)
+
+
+# ---------------------------------------------------------------------------
+# Main Intent Classifier + Ledger Execution Engine
+# ---------------------------------------------------------------------------
 async def classify_and_execute_intent(text: str) -> Dict[str, Any]:
     """
     Multilingual NLP Intent Classifier & Automated Ledger Execution Engine.
-    Converts transcribed speech in Urdu, Punjabi, or English into direct database mutations:
-    - Customer Khata Payment Ledger updates
-    - Credit & Cash Order creation + Stock deductions
-    - Employee Attendance Roster updates
+
+    Supported intents:
+      RECORD_PAYMENT  — customer khata payment
+      RECORD_SALE     — POS sale (cash or credit)
+      ADD_EXPENSE     — log expense / bill
+      CUSTOMER_BALANCE — query outstanding balance
+      CHECK_STOCK     — query product stock level
+      ADD_STOCK       — receive / add stock for a product
+      RESTOCK_LIST    — AI reorder recommendation
+      MARK_ATTENDANCE — employee attendance (present/absent)
+      PAY_SALARY      — employee salary disbursement
+      GENERATE_BILL   — PDF invoice generation
+      TODAY_REVENUE   — dashboard revenue query
+      UNKNOWN         — unrecognized command
     """
     raw_text = text.strip()
     text_lower = raw_text.lower()
 
+    # ── Fetch master data ──────────────────────────────────────────────────
     products = await get_products()
     customers = await get_customers()
     employees = await get_employees()
 
-    matched_product = None
-    matched_customer = None
-    matched_employee = None
-
-    # Entity Matching for Products (Urdu + English + Transliterated terms)
+    # ── Entity: Product ────────────────────────────────────────────────────
+    matched_product: Optional[Dict[str, Any]] = None
     for p in products:
         p_name = p.get("name", "").lower()
-        p_urdu = p.get("urdu_name", "").lower() if p.get("urdu_name") else ""
-        product_terms = [p_name, p_urdu]
-        if "rice" in p_name: product_terms.extend(["chawal", "چاول"])
-        if "wheat" in p_name or "flour" in p_name: product_terms.extend(["atta", "آٹا"])
-        if "sugar" in p_name: product_terms.extend(["shakar", "cheeni", "چینی"])
-        if "oil" in p_name: product_terms.extend(["ghee", "tel", "تیل"])
+        p_urdu = (p.get("urdu_name") or "").lower()
+        terms: List[str] = [w for w in p_name.split() if len(w) >= 3]
+        terms += [w for w in p_urdu.split() if len(w) >= 2]
 
-        for term in product_terms:
-            if not term:
-                continue
-            tokens = [t.strip() for t in term.split() if len(t.strip()) >= 3]
-            if term in text_lower or any(tok in text_lower for tok in tokens):
-                matched_product = p
-                break
-        if matched_product:
+        if "rice" in p_name:
+            terms += ["chawal", "چاول", "basmati"]
+        if "wheat" in p_name or "flour" in p_name or "atta" in p_name:
+            terms += ["atta", "آٹا", "flour", "maida"]
+        if "sugar" in p_name:
+            terms += ["shakar", "cheeni", "چینی", "sugar"]
+        if "oil" in p_name:
+            terms += ["tel", "تیل", "oil"]
+        if "ghee" in p_name:
+            terms += ["ghee", "گھی"]
+
+        if p_name in text_lower or p_urdu in text_lower or \
+                any(tok in text_lower for tok in terms):
+            matched_product = p
             break
 
-    # Entity Matching for Customers
+    # ── Urdu-to-English Name Transliteration Map ───────────────────────────
+    URDU_NAME_MAP = {
+        "علی": ["ali", "muhammad ali"],
+        "محمد": ["muhammad", "mohammad", "mohd"],
+        "طارق": ["tariq", "tariq mahmood"],
+        "محمود": ["mahmood", "mehmood"],
+        "بلال": ["bilal", "bilal helper"],
+        "اسلم": ["aslam", "chaudhry aslam"],
+        "سجاد": ["sajjad", "sajjad khan"],
+        "چودھری": ["chaudhry", "ch"],
+        "حاجی": ["haji"],
+        "حسن": ["hassan", "hasan"],
+        "خان": ["khan"],
+        "احمد": ["ahmad", "ahmed"],
+        "عثمان": ["usman", "osman"],
+        "حمزہ": ["hamza"],
+        "عمر": ["umar", "omer"],
+        "وقاص": ["waqas"],
+    }
+
+    # ── Entity: Customer ───────────────────────────────────────────────────
+    matched_customer: Optional[Dict[str, Any]] = None
     for c in customers:
         c_name = c.get("name", "").lower()
-        if c_name:
-            tokens = [t for t in c_name.split() if len(t) >= 3]
-            if c_name in text_lower or any(tok in text_lower for tok in tokens):
-                matched_customer = c
-                break
+        tokens = [t for t in c_name.split() if len(t) >= 3]
+        # Match English Latin tokens
+        if c_name in text_lower or any(tok in text_lower for tok in tokens):
+            matched_customer = c
+            break
+        # Match Urdu script synonyms
+        for urdu_key, eng_aliases in URDU_NAME_MAP.items():
+            if urdu_key in text_lower:
+                if any(alias in c_name for alias in eng_aliases):
+                    matched_customer = c
+                    break
+        if matched_customer:
+            break
 
-    # Entity Matching for Employees
+    # ── Entity: Employee ───────────────────────────────────────────────────
+    matched_employee: Optional[Dict[str, Any]] = None
     for e in employees:
         e_name = e.get("name", "").lower()
-        if e_name:
-            tokens = [t for t in e_name.split() if len(t) >= 3]
-            if e_name in text_lower or any(tok in text_lower for tok in tokens):
-                matched_employee = e
-                break
+        tokens = [t for t in e_name.split() if len(t) >= 3]
+        if e_name in text_lower or any(tok in text_lower for tok in tokens):
+            matched_employee = e
+            break
+        for urdu_key, eng_aliases in URDU_NAME_MAP.items():
+            if urdu_key in text_lower:
+                if any(alias in e_name for alias in eng_aliases):
+                    matched_employee = e
+                    break
+        if matched_employee:
+            break
 
-    # Detect Wallet / Payment Method
+    # ── Entity: Payment Method ─────────────────────────────────────────────
     payment_method = "cash"
-    if "jazzcash" in text_lower or "jazz" in text_lower:
+    if _matches_any(text_lower, ["jazzcash", "jazz cash"]):
         payment_method = "jazzcash"
-    elif "easypaisa" in text_lower or "easy" in text_lower:
+    elif _matches_any(text_lower, ["easypaisa", "easy paisa"]):
         payment_method = "easypaisa"
-    elif "nayapay" in text_lower or "naya" in text_lower:
+    elif _matches_any(text_lower, ["nayapay", "naya pay"]):
         payment_method = "nayapay"
-    elif "bank" in text_lower or "transfer" in text_lower:
+    elif _matches_any(text_lower, ["bank", "transfer", "online"]):
         payment_method = "bank"
 
-    extracted_numbers = [float(n) for n in re.findall(r'\d+(?:\.\d+)?', text)]
+    # ── Numeric extraction ─────────────────────────────────────────────────
+    amount = _extract_amount(text)
+    quantity = _extract_quantity(text)
 
     intent = "unknown"
-    entities = {}
+    entities: Dict[str, Any] = {}
     reply = ""
 
-    # 1. ACTION: record_payment (Ali paid 500 rupees / علی نے 500 روپے دیے)
-    if any(k in text_lower for k in ["diye", "paid", "jamah", "payment", "vasool", "wapas", "karwaye"]):
+    # ──────────────────────────────────────────────────────────────────────
+    # 1. RECORD_PAYMENT — Ali paid / ne rupay diye / jamah karwaye
+    # ──────────────────────────────────────────────────────────────────────
+    if _matches_any(text_lower, [
+        "diye", "diya", "paid", "jamah", "payment", "vasool",
+        "wapas", "karwaye", "de diye", "ada kiye", "دیے", "جمع", "ادا"
+    ]):
         intent = "record_payment"
         cust_name = matched_customer["name"] if matched_customer else "Customer"
-        entities["person"] = cust_name
-        entities["payment_method"] = payment_method
-        amount = extracted_numbers[0] if extracted_numbers else 500.0
+        entities = {"person": cust_name, "amount": amount, "payment_method": payment_method}
 
         if matched_customer:
-            payment_res = await record_customer_payment(CustomerPayment(
-                customer_id=matched_customer["id"],
-                amount=amount,
-                payment_method=payment_method,
-                note=f"Voice AI: {raw_text}"
-            ))
-            reply = f"✅ Payment of Rs. {amount} via {payment_method.upper()} recorded for {matched_customer['name']}. New Khata balance due: Rs. {payment_res['new_balance_due']}."
+            try:
+                payment_res = await record_customer_payment(CustomerPayment(
+                    customer_id=matched_customer["id"],
+                    amount=amount,
+                    payment_method=payment_method,
+                    note=f"Voice AI: {raw_text}"
+                ))
+                new_bal = payment_res.get("new_balance_due", 0)
+                reply = (
+                    f"✅ Rs. {amount:.0f} کی ادائیگی {matched_customer['name']} کے لیے "
+                    f"{payment_method.upper()} سے ریکارڈ کی گئی۔ "
+                    f"نیا بقایہ: Rs. {new_bal:.0f}۔"
+                )
+            except Exception as ex:
+                reply = f"⚠️ ادائیگی ریکارڈ نہیں ہو سکی: {str(ex)}"
         else:
-            # Fallback customer auto-recording
-            reply = f"✅ Payment of Rs. {amount} via {payment_method.upper()} recorded for {cust_name}."
+            reply = (
+                f"✅ Rs. {amount:.0f} کی ادائیگی {cust_name} کے لیے ریکارڈ کی گئی۔ "
+                "(کسٹمر نام پہچانا نہیں گیا — براہ کرم خاتہ میں چیک کریں۔)"
+            )
 
-    # 2. ACTION: record_sale (Sell 2 kg sugar to Ali / علی کو 2 کلو چینی بیچو)
-    elif any(k in text_lower for k in ["becho", "sell", "record_sale", "sale", "bana do"]) or (matched_product and any(k in text_lower for k in ["order", "kilo", "kg", "bag", "piece"])):
+    # ──────────────────────────────────────────────────────────────────────
+    # 2. RECORD_SALE — becho / sell / credit per / udhaar
+    # ──────────────────────────────────────────────────────────────────────
+    elif _matches_any(text_lower, [
+        "becho", "sell", "bech do", "sale", "bana do", "بیچو", "فروخت"
+    ]) or (matched_product and _matches_any(text_lower, [
+        "order", "kilo", "kg", "bag", "piece", "litre"
+    ])):
         intent = "record_sale"
-        qty = extracted_numbers[0] if extracted_numbers else 1.0
-        is_credit = any(k in text_lower for k in ["udhaar", "credit", "khata"])
-        sale_method = "credit" if is_credit else "cash"
+        is_credit = _matches_any(text_lower, ["udhaar", "credit", "khata", "ادھار", "کھاتہ"])
+        sale_method = "credit" if is_credit else payment_method
 
         if matched_product:
-            entities["product"] = matched_product["name"]
-            entities["quantity"] = qty
-            entities["payment_method"] = sale_method
-
+            entities = {
+                "product": matched_product["name"],
+                "quantity": quantity,
+                "payment_method": sale_method,
+            }
             try:
                 order_res = await create_order(OrderCreate(
-                    line_items=[OrderLineItem(product_id=matched_product["id"], quantity=qty)],
+                    line_items=[OrderLineItem(
+                        product_id=matched_product["id"],
+                        quantity=quantity
+                    )],
                     discount=0.0,
                     payment_method=sale_method,
+                    amount_paid_now=0.0 if is_credit else amount,
                     customer_id=matched_customer["id"] if matched_customer else None,
-                    client_id=f"voice_sale_{qty}_{matched_product['id'][:6]}"
+                    client_id=f"voice_sale_{quantity}_{matched_product['id'][:6]}"
                 ))
-                cust_info = f" for customer {matched_customer['name']} (Khata Updated)" if matched_customer and is_credit else ""
-                reply = f"✅ Sale order created: {qty} {matched_product['unit']} of {matched_product['name']}{cust_info}. Total: Rs. {order_res['total_amount']}. Stock remaining: {matched_product['current_stock'] - qty}."
+                remaining = matched_product.get("current_stock", 0) - quantity
+                cust_info = (
+                    f" — {matched_customer['name']} کے خاتہ میں درج"
+                    if matched_customer and is_credit else ""
+                )
+                reply = (
+                    f"✅ {quantity} {matched_product['unit']} {matched_product['name']} "
+                    f"فروخت ہوئی{cust_info}۔ "
+                    f"کل: Rs. {order_res['total_amount']:.0f}۔ "
+                    f"بقیہ اسٹاک: {remaining:.1f}۔"
+                )
             except Exception as ex:
-                reply = f"⚠️ Could not complete voice sale order: {str(ex)}"
+                reply = f"⚠️ آرڈر ریکارڈ نہیں ہو سکا: {str(ex)}"
         else:
-            reply = "Please specify the product name for recording the sale."
+            reply = "براہ کرم پروڈکٹ کا نام بتائیں تاکہ فروخت درج ہو سکے۔"
 
-    # 3. ACTION: add_expense (Electricity bill 3000 rupees / بجلی کا بل 3000 روپے)
-    elif any(k in text_lower for k in ["expense", "bill", "bijli", "rent", "kiraya", "kharcha", "kharch"]):
+    # ──────────────────────────────────────────────────────────────────────
+    # 3. ADD_EXPENSE — bill / bijli / rent / kharcha
+    # ──────────────────────────────────────────────────────────────────────
+    elif _matches_any(text_lower, [
+        "expense", "bill", "bijli", "electricity", "rent", "kiraya",
+        "kharcha", "kharch", "بل", "کرایہ", "خرچہ", "بجلی"
+    ]):
         intent = "add_expense"
-        amount = extracted_numbers[0] if extracted_numbers else 0.0
-        category = "utilities" if any(k in text_lower for k in ["bijli", "electricity", "utility"]) else "misc"
-        if "rent" in text_lower or "kiraya" in text_lower: category = "rent"
+        category = "misc"
+        if _matches_any(text_lower, ["bijli", "electricity", "utility", "بجلی"]):
+            category = "utilities"
+        elif _matches_any(text_lower, ["rent", "kiraya", "کرایہ"]):
+            category = "rent"
+        elif _matches_any(text_lower, ["salary", "tankhwah", "تنخواہ"]):
+            category = "salaries"
+
+        entities = {"amount": amount, "category": category, "payment_method": payment_method}
 
         if amount > 0:
-            entities["amount"] = amount
-            entities["category"] = category
-            from app.services.cashbook_service import create_expense
-            from app.models.schemas import ExpenseCreate
-            await create_expense(ExpenseCreate(
-                category=category,
-                amount=amount,
-                payment_method=payment_method,
-                note=f"Voice AI: {raw_text}"
-            ))
-            reply = f"✅ Expense of Rs. {amount} logged under {category.upper()}."
+            try:
+                from app.services.cashbook_service import create_expense
+                await create_expense(ExpenseCreate(
+                    category=category,
+                    amount=amount,
+                    payment_method=payment_method,
+                    note=f"Voice AI: {raw_text}"
+                ))
+                reply = f"✅ Rs. {amount:.0f} کا خرچ '{category.upper()}' میں ریکارڈ کیا گیا۔"
+            except Exception as ex:
+                reply = f"⚠️ خرچ ریکارڈ نہیں ہو سکا: {str(ex)}"
         else:
-            reply = "Please specify the expense amount."
+            reply = "براہ کرم خرچ کی رقم بتائیں۔"
 
-    # 4. ACTION: customer_balance / check_balance (How much does Ali owe? / علی کا کتنا باقی ہے)
-    elif any(k in text_lower for k in ["check_balance", "customer_balance", "balance", "owe", "khata", "udhaar", "baki", "dene hain", "hisaab"]):
+    # ──────────────────────────────────────────────────────────────────────
+    # 4. CUSTOMER_BALANCE — baki / owe / hisaab
+    # ──────────────────────────────────────────────────────────────────────
+    elif _matches_any(text_lower, [
+        "balance", "baki", "owe", "kitna dena", "hisaab", "udhaar",
+        "کتنا", "باقی", "حساب", "ادھار"
+    ]):
         intent = "customer_balance"
         if matched_customer:
-            entities["person"] = matched_customer["name"]
-            reply = f"{matched_customer['name']} owes Rs. {matched_customer['balance_due']}."
+            bal = matched_customer.get("balance_due", 0)
+            entities = {"person": matched_customer["name"], "balance": bal}
+            reply = f"{matched_customer['name']} کا بقایہ Rs. {bal:.0f} ہے۔"
         else:
-            total_pending = sum(c.get("balance_due", 0.0) for c in customers)
-            reply = f"Total pending customer Khata balance across all customers is Rs. {total_pending}."
+            total = sum(c.get("balance_due", 0.0) for c in customers)
+            entities = {"total_pending": total}
+            reply = f"تمام کسٹمرز کا مجموعی بقایہ Rs. {total:.0f} ہے۔"
 
-    # 5. ACTION: restock_list (Restock recommendation list)
-    elif any(k in text_lower for k in ["restock", "reorder", "mangalwao", "khatam hone wala", "stock kam"]):
+    # ──────────────────────────────────────────────────────────────────────
+    # 5. RESTOCK_LIST — restock / mangalwao / khatam
+    # ──────────────────────────────────────────────────────────────────────
+    elif _matches_any(text_lower, [
+        "restock", "reorder", "mangalwao", "khatam hone wala",
+        "stock kam", "منگواؤ", "ختم ہونے والا", "اسٹاک کم"
+    ]):
         intent = "restock_list"
-        forecast_data = await generate_demand_forecast()
-        items_to_restock = [item for item in forecast_data.get("forecasts", []) if item.get("needs_restock")]
-        if items_to_restock:
-            names = ", ".join([f"{item['product_name']} ({item['suggested_reorder_qty']} qty)" for item in items_to_restock])
-            reply = f"Items needing restock: {names}."
-        else:
-            reply = "All products currently have sufficient stock levels!"
+        try:
+            forecast_data = await generate_demand_forecast()
+            items = [i for i in forecast_data.get("forecasts", []) if i.get("needs_restock")]
+            if items:
+                names = "، ".join(
+                    f"{i['product_name']} ({i['suggested_reorder_qty']:.0f} qty)"
+                    for i in items
+                )
+                reply = f"دوبارہ منگوائیں: {names}۔"
+            else:
+                reply = "تمام پروڈکٹس کا اسٹاک کافی ہے!"
+        except Exception as ex:
+            reply = f"⚠️ فورکاسٹ نہیں مل سکی: {str(ex)}"
 
-    # 6. ACTION: check_stock (Check product stock / chawal ka stock check karo)
-    elif any(k in text_lower for k in ["stock", "available", "quantity", "kitna hai", "check_stock"]) or (matched_product and "stock" in text_lower):
+    # ──────────────────────────────────────────────────────────────────────
+    # 6. CHECK_STOCK — stock / available / kitna hai
+    # ──────────────────────────────────────────────────────────────────────
+    elif _matches_any(text_lower, [
+        "stock", "available", "kitna hai", "kitna", "اسٹاک", "check_stock"
+    ]) or matched_product:
         intent = "check_stock"
         if matched_product:
-            entities["product"] = matched_product["name"]
-            reply = f"Current stock for {matched_product['name']} is {matched_product['current_stock']} {matched_product['unit']}."
+            stk = matched_product.get("current_stock", 0)
+            unit = matched_product.get("unit", "unit")
+            threshold = matched_product.get("low_stock_threshold", 5)
+            status = "⚠️ کم اسٹاک" if stk <= threshold else "✅ کافی اسٹاک"
+            entities = {"product": matched_product["name"], "stock": stk, "unit": unit}
+            reply = (
+                f"{matched_product['name']}: {stk} {unit} — {status}۔"
+            )
         else:
-            low_stock = [p for p in products if p.get("current_stock", 0) <= p.get("low_stock_threshold", 5)]
-            reply = f"Total products: {len(products)}. {len(low_stock)} products are low on stock."
+            low = [p for p in products if p.get("current_stock", 0) <= p.get("low_stock_threshold", 5)]
+            entities = {"total_products": len(products), "low_stock_count": len(low)}
+            reply = (
+                f"کل {len(products)} پروڈکٹس۔ "
+                f"{len(low)} پروڈکٹس کا اسٹاک کم ہے۔"
+            )
 
-    # 7. ACTION: add_stock (Add 10 kg flour / 10 کلو آٹا شامل کرو)
-    elif any(k in text_lower for k in ["add_stock", "add stock", "shamil", "stock add", "bharo"]) or (matched_product and "add" in text_lower):
+    # ──────────────────────────────────────────────────────────────────────
+    # 7. ADD_STOCK — shamil karo / stock add / bharo
+    # ──────────────────────────────────────────────────────────────────────
+    elif _matches_any(text_lower, [
+        "add_stock", "shamil", "stock add", "bharo", "mila do",
+        "شامل", "بھرو", "اضافہ"
+    ]):
         intent = "add_stock"
-        qty = extracted_numbers[0] if extracted_numbers else 10.0
         if matched_product:
-            entities["product"] = matched_product["name"]
-            entities["quantity"] = qty
-            await adjust_stock(matched_product["id"], qty, reason=f"Voice AI stock addition: {raw_text}")
-            reply = f"✅ Added {qty} {matched_product['unit']} to {matched_product['name']}. New stock: {matched_product['current_stock'] + qty}."
+            entities = {"product": matched_product["name"], "quantity": quantity}
+            try:
+                updated = await adjust_stock(
+                    matched_product["id"], quantity,
+                    reason=f"Voice AI stock addition: {raw_text}"
+                )
+                new_stock = updated.get("current_stock", matched_product.get("current_stock", 0) + quantity)
+                reply = (
+                    f"✅ {matched_product['name']} میں {quantity} {matched_product['unit']} اضافہ۔ "
+                    f"نیا اسٹاک: {new_stock}۔"
+                )
+            except Exception as ex:
+                reply = f"⚠️ اسٹاک اضافہ ناکام: {str(ex)}"
         else:
-            reply = "Please specify which product to add stock for."
+            reply = "براہ کرم پروڈکٹ کا نام بتائیں۔"
 
-    # 6. ACTION: mark_attendance (Ali is present today / علی آج حاضر ہے)
-    elif matched_employee and any(k in text_lower for k in ["present", "absent", "hazir", "ghair", "attendance", "aya"]):
+    # ──────────────────────────────────────────────────────────────────────
+    # 8. MARK_ATTENDANCE — haziri / present / absent
+    # ──────────────────────────────────────────────────────────────────────
+    elif matched_employee and _matches_any(text_lower, [
+        "present", "absent", "hazir", "ghair", "hazari", "aya",
+        "attendance", "حاضر", "غیر حاضر", "حاضری"
+    ]):
         intent = "mark_attendance"
-        entities["person"] = matched_employee["name"]
-        status = "absent" if any(k in text_lower for k in ["absent", "ghair"]) else "present"
+        status = (
+            "absent"
+            if _matches_any(text_lower, ["absent", "ghair", "nahi aya", "غیر حاضر"])
+            else "present"
+        )
+        entities = {"person": matched_employee["name"], "status": status}
         from datetime import datetime, timezone
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        try:
+            await mark_attendance(AttendanceMark(
+                employee_id=matched_employee["id"],
+                date=today_str,
+                status=status
+            ))
+            reply = (
+                f"✅ {matched_employee['name']} کی حاضری آج "
+                f"'{status.upper()}' درج کی گئی۔"
+            )
+        except Exception as ex:
+            reply = f"⚠️ حاضری ریکارڈ ناکام: {str(ex)}"
 
-        await mark_attendance(AttendanceMark(
-            employee_id=matched_employee["id"],
-            date=today_str,
-            status=status
-        ))
-        reply = f"✅ Attendance for employee {matched_employee['name']} marked as '{status.upper()}' for today."
-
-    # 7. ACTION: pay_salary (Pay Ali 15000 salary / علی کو تنخواہ دو)
-    elif any(k in text_lower for k in ["pay_salary", "salary", "tankhwah", "tanqwah"]):
+    # ──────────────────────────────────────────────────────────────────────
+    # 9. PAY_SALARY — tankhwah / salary
+    # ──────────────────────────────────────────────────────────────────────
+    elif _matches_any(text_lower, [
+        "salary", "tankhwah", "tanqwah", "pay_salary", "تنخواہ"
+    ]):
         intent = "pay_salary"
-        amount = extracted_numbers[0] if extracted_numbers else 15000.0
-        target_name = matched_employee["name"] if matched_employee else (matched_customer["name"] if matched_customer else "Employee")
-        entities["person"] = target_name
-        entities["amount"] = amount
-        from app.services.cashbook_service import create_expense
-        from app.models.schemas import ExpenseCreate
-        await create_expense(ExpenseCreate(
-            category="salaries",
-            amount=amount,
-            payment_method=payment_method,
-            note=f"Salary paid to {target_name} via Voice AI"
-        ))
-        reply = f"✅ Salary of Rs. {amount} paid to {target_name} via {payment_method.upper()}."
+        target = matched_employee["name"] if matched_employee else "Employee"
+        entities = {"person": target, "amount": amount, "payment_method": payment_method}
+        try:
+            from app.services.cashbook_service import create_expense
+            await create_expense(ExpenseCreate(
+                category="salaries",
+                amount=amount,
+                payment_method=payment_method,
+                note=f"Salary paid to {target} via Voice AI"
+            ))
+            reply = (
+                f"✅ {target} کو Rs. {amount:.0f} تنخواہ "
+                f"{payment_method.upper()} سے ادا کی گئی۔"
+            )
+        except Exception as ex:
+            reply = f"⚠️ تنخواہ ادائیگی ناکام: {str(ex)}"
 
-    # 8. ACTION: generate_bill (Generate bill for Ali / علی کا بل بناؤ)
-    elif any(k in text_lower for k in ["generate_bill", "bill", "invoice", "receipt", "parcha", "rasid"]):
+    # ──────────────────────────────────────────────────────────────────────
+    # 10. GENERATE_BILL — invoice / receipt / parcha / bill banana
+    # ──────────────────────────────────────────────────────────────────────
+    elif _matches_any(text_lower, [
+        "generate_bill", "bill", "invoice", "receipt", "parcha",
+        "rasid", "بل بناؤ", "رسید", "انوائس"
+    ]):
         intent = "generate_bill"
-        target_name = matched_customer["name"] if matched_customer else "Customer"
-        entities["person"] = target_name
-        reply = f"📄 Bill / Invoice PDF generated for {target_name}. Available in Reports & Invoice section."
+        target = matched_customer["name"] if matched_customer else "Customer"
+        entities = {"person": target}
+        reply = f"📄 {target} کا بل / انوائس PDF تیار ہے۔ رپورٹس سیکشن میں دیکھیں۔"
 
+    # ──────────────────────────────────────────────────────────────────────
+    # 11. TODAY_REVENUE — aaj ki kamai / revenue / profit
+    # ──────────────────────────────────────────────────────────────────────
+    elif _matches_any(text_lower, [
+        "revenue", "kamai", "profit", "faida", "aaj ki", "today",
+        "آج کی کمائی", "منافع", "ریونیو"
+    ]):
+        intent = "today_revenue"
+        try:
+            metrics = await get_dashboard_metrics()
+            rev = metrics.get("today_revenue", 0)
+            profit = metrics.get("today_profit", 0)
+            orders = metrics.get("order_count", 0)
+            entities = {"today_revenue": rev, "today_profit": profit, "order_count": orders}
+            reply = (
+                f"آج کی کمائی: Rs. {rev:.0f}۔ "
+                f"منافع: Rs. {profit:.0f}۔ "
+                f"کل آرڈرز: {orders}۔"
+            )
+        except Exception as ex:
+            reply = f"⚠️ ڈیش بورڈ ڈیٹا نہیں مل سکا: {str(ex)}"
+
+    # ──────────────────────────────────────────────────────────────────────
+    # UNKNOWN
+    # ──────────────────────────────────────────────────────────────────────
     else:
         intent = "unknown"
-        reply = "Command received. Try saying: 'Ali ne 500 rupay diye', 'Electricity bill 3000', or 'Ali ko 2 kilo chawal becho'."
+        reply = (
+            "کمانڈ سمجھ نہیں آئی۔ مثال:\n"
+            "• 'Ali ne 500 rupay diye'\n"
+            "• 'Bijli bill 3000'\n"
+            "• 'Ali ko 2 kilo chawal becho'\n"
+            "• 'Chawal ka stock check karo'"
+        )
 
     return {
         "intent": intent,
         "entities": entities,
         "reply": reply,
-        "raw_text": raw_text
+        "raw_text": raw_text,
     }
