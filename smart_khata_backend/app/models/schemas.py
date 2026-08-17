@@ -277,12 +277,17 @@ class ForecastResponse(BaseModel):
 # AI Voice Intent
 class VoiceIntentRequest(BaseModel):
     text: str
+    context: Optional[dict] = None
 
 class VoiceIntentResponse(BaseModel):
     intent: str
     entities: dict
     reply: str
     raw_text: str
+    needs_confirmation: Optional[bool] = False
+    confirm_message: Optional[str] = None
+    whatsapp_url: Optional[str] = None
+    follow_up_prompt: Optional[str] = None
 
 # Offline Sync & Backup
 class SyncPullResponse(BaseModel):

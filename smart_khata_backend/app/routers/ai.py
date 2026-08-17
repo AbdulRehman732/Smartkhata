@@ -12,7 +12,7 @@ async def process_text_intent(
     payload: VoiceIntentRequest,
     current_user: dict = Depends(require_employee_or_owner)
 ):
-    result = await classify_and_execute_intent(payload.text)
+    result = await classify_and_execute_intent(payload.text, payload.context)
     return VoiceIntentResponse(**result)
 
 @router.post("/stt-intent", response_model=VoiceIntentResponse)

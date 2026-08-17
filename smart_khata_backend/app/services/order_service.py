@@ -46,7 +46,7 @@ async def create_order(order_data: OrderCreate) -> Dict[str, Any]:
                 f"Insufficient stock for product '{prod['name']}'. Requested: {req_qty}, Available: {curr_stock}. Shortfall: {shortfall}."
             )
         
-        unit_price = prod.get("selling_price", 0.0)
+        unit_price = prod.get("selling_price") or prod.get("sale_price") or 0.0
         line_total = req_qty * unit_price
         subtotal += line_total
 

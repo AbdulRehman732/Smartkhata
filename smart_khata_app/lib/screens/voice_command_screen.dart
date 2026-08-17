@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../core/api_client.dart';
 import '../core/constants.dart';
 
@@ -62,6 +63,9 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
   Map<String, dynamic>? _pendingConfirmation;
   bool _awaitingConfirmation = false;
 
+  /// Conversational Multi-Turn Context (persisted between turns)
+  Map<String, dynamic>? _conversationContext;
+
   /// Last 5 command history entries
   final List<_HistoryEntry> _history = [];
 
@@ -78,8 +82,8 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     // Seed a demo result so the screen doesn't look empty on first open
     _responseResult = {
       'intent': 'CHECK_STOCK',
-      'reply': 'Basmati Rice (Super Kernal) — اسٹاک: 50 کلو',
-      'entities': {'product': 'Basmati Rice (Super Kernal)'},
+      'reply': 'باسمتی چاول (Super Kernal): 50.0 kg (✅ کافی اسٹاک)',
+      'entities': {'products': ['Basmati Rice (Super Kernal)']},
       'status': 'In stock',
     };
   }
@@ -156,10 +160,14 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
       } else {
         await _flutterTts.setLanguage('en-US');
       }
-      // Only strip genuine XML control chars (U+0000–U+001F except tab/newline)
-      // Preserve Urdu Unicode (U+0600–U+06FF) and all printable chars
       final cleanText = text
           .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F]'), '')
+          .replaceAll('✅', '')
+          .replaceAll('⚠️', '')
+          .replaceAll('📱', '')
+          .replaceAll('📄', '')
+          .replaceAll('*', '')
+          .replaceAll('_', '')
           .trim();
       if (cleanText.isNotEmpty) {
         await _flutterTts.speak(cleanText);
@@ -237,15 +245,12 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     );
   }
 
-  // ── Local Offline Intent Engine ──────────────────────────────────────────
+  // ── Local Offline Intent Fallback ─────────────────────────────────────────
   Map<String, dynamic> _processLocalIntent(String text) {
     final t = text.toLowerCase();
-
-    // Extract numbers (digits or common Urdu/Hindi words)
     final nums = RegExp(r'\d+(?:\.\d+)?').allMatches(text).map((m) => double.tryParse(m.group(0)!) ?? 0.0).toList();
     double numVal = nums.isNotEmpty ? nums.first : 500.0;
 
-    // Urdu number words
     const urduNums = {
       'ek': 1, 'do': 2, 'teen': 3, 'char': 4, 'paanch': 5,
       'chhe': 6, 'saat': 7, 'aath': 8, 'nau': 9, 'das': 10,
@@ -266,7 +271,6 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
       }
     }
 
-    // Payment intents
     if (_matchesAny(t, ['diye', 'diya', 'paid', 'jamah', 'payment', 'vasool', 'wapas', 'karwaye', 'de diye', 'ada kiye', 'دیے', 'جمع', 'ادا'])) {
       return {
         'intent': 'RECORD_PAYMENT',
@@ -278,7 +282,6 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
       };
     }
 
-    // Sale/credit intents
     if (_matchesAny(t, ['becho', 'sell', 'sale', 'bech do', 'order', 'udhaar', 'credit', 'khata mein', 'بیچو', 'فروخت'])) {
       return {
         'intent': 'RECORD_SALE',
@@ -290,18 +293,6 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
       };
     }
 
-    // Attendance intents
-    if (_matchesAny(t, ['hazari', 'hazir', 'present', 'absent', 'aya', 'nahi aya', 'حاضری', 'حاضر', 'غیر حاضر'])) {
-      final status = _matchesAny(t, ['absent', 'nahi aya', 'ghair', 'غیر حاضر']) ? 'ABSENT' : 'PRESENT';
-      return {
-        'intent': 'MARK_ATTENDANCE',
-        'reply': 'حاضری $status درج کی گئی۔ (آف لائن موڈ)',
-        'entities': {'status': status},
-        'raw_text': text,
-      };
-    }
-
-    // Stock check
     if (_matchesAny(t, ['stock', 'available', 'kitna hai', 'اسٹاک', 'چاول', 'آٹا', 'چینی', 'rice', 'flour', 'sugar', 'oil', 'ghee'])) {
       return {
         'intent': 'CHECK_STOCK',
@@ -311,7 +302,6 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
       };
     }
 
-    // Customer balance check
     if (_matchesAny(t, ['balance', 'baki', 'owe', 'kitna dena', 'hisaab', 'کتنا', 'باقی', 'حساب'])) {
       return {
         'intent': 'CUSTOMER_BALANCE',
@@ -321,31 +311,21 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
       };
     }
 
-    // Restock
-    if (_matchesAny(t, ['restock', 'mangalwao', 'khatam', 'reorder', 'منگواؤ', 'ختم ہونے والا'])) {
+    if (_matchesAny(t, ['whatsapp', 'واٹس ایپ', 'بل بھیجو'])) {
+      final phone = '923001234567';
+      final msg = Uri.encodeComponent('احمد جنرل سٹور: محمد علی صاحب، آپ کا بقایہ Rs. 1200 ہے۔');
       return {
-        'intent': 'RESTOCK_LIST',
-        'reply': 'آٹا اور تیل کا اسٹاک کم ہے — دوبارہ منگوائیں۔ (آف لائن)',
-        'entities': {},
+        'intent': 'WHATSAPP_REMINDER',
+        'reply': 'محمد علی کا واٹس ایپ بل تیار ہے۔',
+        'entities': {'person': 'Muhammad Ali'},
+        'whatsapp_url': 'https://wa.me/$phone?text=$msg',
         'raw_text': text,
-      };
-    }
-
-    // Expense
-    if (_matchesAny(t, ['expense', 'bill', 'bijli', 'rent', 'kiraya', 'kharcha', 'بل', 'کرایہ', 'خرچہ'])) {
-      return {
-        'intent': 'ADD_EXPENSE',
-        'reply': 'خرچ Rs. $numVal درج کیا گیا۔ (آف لائن موڈ)',
-        'entities': {'amount': numVal},
-        'raw_text': text,
-        'needs_confirmation': true,
-        'confirm_message': 'Rs. ${numVal.toStringAsFixed(0)} کا خرچ ریکارڈ کریں؟',
       };
     }
 
     return {
       'intent': 'UNKNOWN',
-      'reply': 'کمانڈ سمجھ نہیں آئی۔ مثال: "علی نے 500 روپے دیے" یا "چاول کا اسٹاک چیک کرو"',
+      'reply': 'کمانڈ سمجھ نہیں آئی۔ مثال: "Ali ko 2 kilo chawal becho" یا "Ali ne 500 rupay diye"',
       'entities': {},
       'raw_text': text,
     };
@@ -369,7 +349,10 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     Map<String, dynamic> res;
     try {
       final client = ApiClient();
-      res = await client.post('/ai/intent', {'text': text});
+      res = await client.post('/ai/intent', {
+        'text': text,
+        'context': _conversationContext,
+      });
     } catch (_) {
       res = _processLocalIntent(text);
     }
@@ -415,6 +398,7 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
       _awaitingConfirmation = false;
       _pendingConfirmation = null;
       _isProcessing = false;
+      _conversationContext = null;
     });
     _speakResponse('منسوخ کر دیا گیا۔');
   }
@@ -435,11 +419,29 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     setState(() {
       _responseResult = res;
       _isProcessing = false;
+      _conversationContext = null;
       _history.insert(0, entry);
       if (_history.length > 5) _history.removeLast();
     });
 
     if (replyText.isNotEmpty) _speakResponse(replyText);
+  }
+
+  // ── Open WhatsApp Link ────────────────────────────────────────────────────
+  Future<void> _openWhatsApp(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        await launchUrl(uri);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not launch WhatsApp.')),
+      );
+    }
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -463,7 +465,6 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
           ),
         ),
         actions: [
-          // STT availability indicator
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: Icon(
@@ -662,9 +663,10 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     final cmds = [
       'چاول کا اسٹاک چیک کرو',
       'Muhammad Ali ne 500 rupay diye',
-      'Ali ko 2 kilo chawal credit per becho',
-      'Ali Cashier ki aaj hazari lagao',
+      'Ali ko 2 kilo chawal aur 1 litre tel udhaar becho',
+      'Ali ko WhatsApp per bill bhej do',
       'Bijli ka bill 3000 rupay',
+      'Ali Cashier ki aaj hazari lagao',
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -792,7 +794,7 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
           const SizedBox(height: 12),
           Text(
             confirmMsg,
-            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppConstants.charcoal),
+            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppConstants.charcoal, height: 1.4),
           ),
           const SizedBox(height: 16),
           Row(
@@ -844,6 +846,8 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
 
   // ── Result Card ───────────────────────────────────────────────────────────
   Widget _buildResultCard() {
+    final whatsappUrl = _responseResult?['whatsapp_url'] as String?;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -887,6 +891,20 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
               _responseResult!['reply'] ?? 'عمل مکمل ہو گیا۔',
               style: GoogleFonts.inter(color: AppConstants.charcoal, fontWeight: FontWeight.w700, fontSize: 15, height: 1.5),
             ),
+            // Direct WhatsApp Send Button
+            if (whatsappUrl != null && whatsappUrl.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              ElevatedButton.icon(
+                onPressed: () => _openWhatsApp(whatsappUrl),
+                icon: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
+                label: Text('واٹس ایپ پر بل بھیجیں (WhatsApp)', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF25D366),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
             // Entities
             if (_responseResult!['entities'] is Map && (_responseResult!['entities'] as Map).isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -894,6 +912,7 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
                 spacing: 8,
                 runSpacing: 6,
                 children: (_responseResult!['entities'] as Map).entries.map((e) {
+                  if (e.key == 'whatsapp_url') return const SizedBox.shrink();
                   return Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
