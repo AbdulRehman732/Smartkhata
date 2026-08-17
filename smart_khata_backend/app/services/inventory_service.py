@@ -36,6 +36,14 @@ async def get_products(
 
     for p in products:
         p["id"] = p["_id"]
+        if "selling_price" not in p and "sale_price" in p:
+            p["selling_price"] = p["sale_price"]
+        if "buying_price" not in p and "cost_price" in p:
+            p["buying_price"] = p["cost_price"]
+        if "low_stock_threshold" not in p and "min_stock_alert" in p:
+            p["low_stock_threshold"] = p["min_stock_alert"]
+        if "updated_at" not in p:
+            p["updated_at"] = utc_now_iso()
 
     if low_stock_only:
         products = [p for p in products if p.get("current_stock", 0) <= p.get("low_stock_threshold", 5)]
@@ -47,6 +55,14 @@ async def get_product_by_id(product_id: str) -> Optional[Dict[str, Any]]:
     doc = await db["products"].find_one({"_id": product_id})
     if doc:
         doc["id"] = doc["_id"]
+        if "selling_price" not in doc and "sale_price" in doc:
+            doc["selling_price"] = doc["sale_price"]
+        if "buying_price" not in doc and "cost_price" in doc:
+            doc["buying_price"] = doc["cost_price"]
+        if "low_stock_threshold" not in doc and "min_stock_alert" in doc:
+            doc["low_stock_threshold"] = doc["min_stock_alert"]
+        if "updated_at" not in doc:
+            doc["updated_at"] = utc_now_iso()
     return doc
 
 async def update_product(product_id: str, updates: ProductUpdate) -> Optional[Dict[str, Any]]:
