@@ -118,6 +118,15 @@ async def create_leave_request(data) -> Dict[str, Any]:
     doc["id"] = req_id
     return doc
 
+async def get_employee_leave_requests(employee_id: str) -> List[Dict[str, Any]]:
+    db = get_database()
+    cursor = db["leave_requests"].find({"employee_id": employee_id})
+    records = await cursor.to_list(1000)
+    for r in records:
+        r["id"] = r["_id"]
+    return records
+
+
 # Attendance Upsert Logic
 async def mark_attendance(data: AttendanceMark) -> Dict[str, Any]:
     db = get_database()

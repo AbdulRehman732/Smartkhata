@@ -312,7 +312,7 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     }
 
     if (_matchesAny(t, ['whatsapp', 'واٹس ایپ', 'بل بھیجو'])) {
-      final phone = '923001234567';
+      const phone = '923001234567';
       final msg = Uri.encodeComponent('احمد جنرل سٹور: محمد علی صاحب، آپ کا بقایہ Rs. 1200 ہے۔');
       return {
         'intent': 'WHATSAPP_REMINDER',

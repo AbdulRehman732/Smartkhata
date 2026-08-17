@@ -16,7 +16,7 @@ void main() async {
 class SmartKhataApp extends StatelessWidget {
   final bool isLoggedIn;
 
-  const SmartKhataApp({Key? key, required this.isLoggedIn}) : super(key: key);
+  const SmartKhataApp({super.key, required this.isLoggedIn});
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +32,6 @@ class SmartKhataApp extends StatelessWidget {
           primary: AppConstants.deepEmerald,
           secondary: AppConstants.warmSage,
           surface: AppConstants.surfaceWhite,
-          background: AppConstants.creamBg,
         ),
         textTheme: GoogleFonts.interTextTheme(ThemeData.light().textTheme).copyWith(
           displayLarge: GoogleFonts.instrumentSerif(color: AppConstants.charcoal, fontWeight: FontWeight.bold),

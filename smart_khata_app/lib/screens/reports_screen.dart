@@ -4,7 +4,7 @@ import '../core/api_client.dart';
 import '../core/constants.dart';
 
 class ReportsScreen extends StatefulWidget {
-  const ReportsScreen({Key? key}) : super(key: key);
+  const ReportsScreen({super.key});
 
   @override
   State<ReportsScreen> createState() => _ReportsScreenState();
@@ -108,7 +108,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
         border: Border.all(color: isBold ? AppConstants.mutedTerracotta : AppConstants.softBorder, width: isBold ? 1.5 : 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),

@@ -5,7 +5,7 @@ import '../core/api_client.dart';
 import '../core/constants.dart';
 
 class PayrollScreen extends StatefulWidget {
-  const PayrollScreen({Key? key}) : super(key: key);
+  const PayrollScreen({super.key});
 
   @override
   State<PayrollScreen> createState() => _PayrollScreenState();
@@ -14,18 +14,20 @@ class PayrollScreen extends StatefulWidget {
 class _PayrollScreenState extends State<PayrollScreen> {
   Map<String, dynamic>? _payrollRun;
   bool _isLoading = false;
-  String _selectedMonth = DateFormat('yyyy-MM').format(DateTime.now());
+  final String _selectedMonth = DateFormat('yyyy-MM').format(DateTime.now());
 
   Future<void> _generatePayroll() async {
     setState(() => _isLoading = true);
     try {
       final client = ApiClient();
       final data = await client.post('/payroll/generate', {'month': _selectedMonth});
+      if (!mounted) return;
       setState(() {
         _payrollRun = data;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Payroll error: $e'), backgroundColor: AppConstants.alertRed),
       );
@@ -38,6 +40,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
     try {
       final client = ApiClient();
       final updated = await client.post('/payroll/${_payrollRun!['id']}/pay', {});
+      if (!mounted) return;
       setState(() {
         _payrollRun = updated;
       });
@@ -45,11 +48,13 @@ class _PayrollScreenState extends State<PayrollScreen> {
         const SnackBar(content: Text('Payroll marked as Paid & Salary Expense Logged!'), backgroundColor: AppConstants.deepEmerald),
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString()), backgroundColor: AppConstants.alertRed),
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {

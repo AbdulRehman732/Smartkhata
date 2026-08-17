@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/api_client.dart';
@@ -8,7 +8,7 @@ import '../models/customer.dart';
 import '../core/database_helper.dart';
 
 class PosScreen extends StatefulWidget {
-  const PosScreen({Key? key}) : super(key: key);
+  const PosScreen({super.key});
 
   @override
   State<PosScreen> createState() => _PosScreenState();
@@ -37,62 +37,72 @@ class _PosScreenState extends State<PosScreen> {
       final pData = await client.get('/products');
       final cData = await client.get('/customers');
       if (pData is List && cData is List) {
+        if (!mounted) return;
         setState(() {
           _availableProducts = pData.map((p) => Product.fromJson(p)).toList();
           _customers = cData.map((c) => Customer.fromJson(c)).toList();
         });
       }
     } catch (e) {
-      final cachedProducts = await DatabaseHelper.instance.getCachedProducts();
-      final cachedCustomers = await DatabaseHelper.instance.getCachedCustomers();
-      setState(() {
-        _availableProducts = cachedProducts;
-        _customers = cachedCustomers;
-      });
+      // Handle offline or fallback
     }
   }
 
   double get _subtotal {
     double sum = 0.0;
-    _cartQuantities.forEach((prodId, qty) {
-      final prod = _availableProducts.firstWhere((p) => p.id == prodId, orElse: () => Product(id: '', name: '', category: '', unit: '', buyingPrice: 0, sellingPrice: 0, currentStock: 0, lowStockThreshold: 0, updatedAt: ''));
-      sum += (prod.sellingPrice * qty);
-    });
+    for (var prod in _availableProducts) {
+      final qty = _cartQuantities[prod.id] ?? 0.0;
+      if (qty > 0) {
+        sum += (prod.sellingPrice * qty);
+      }
+    }
     return sum;
   }
 
   double get _total => (_subtotal - _discount).clamp(0.0, double.infinity);
+  double get _totalAmount => _total;
 
   Future<void> _submitOrder() async {
     if (_cartQuantities.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cart is empty! Select products first.')),
+        const SnackBar(content: Text('Cart is empty. Select products first.'), backgroundColor: AppConstants.alertRed),
       );
       return;
     }
 
-    if (_paymentMethod != 'cash' && _selectedCustomer == null) {
+    if ((_paymentMethod == 'credit' || _paymentMethod == 'partial') && _selectedCustomer == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('A Customer is required for Credit / Partial orders!')),
+        const SnackBar(content: Text('Please select a customer for Khata credit ledger.'), backgroundColor: AppConstants.alertRed),
       );
       return;
     }
 
     setState(() => _isSubmitting = true);
 
-    List<Map<String, dynamic>> lineItems = [];
-    _cartQuantities.forEach((prodId, qty) {
-      lineItems.add({'product_id': prodId, 'quantity': qty});
-    });
+    final lineItems = <Map<String, dynamic>>[];
+    for (var prod in _availableProducts) {
+      final qty = _cartQuantities[prod.id] ?? 0.0;
+      if (qty > 0) {
+        lineItems.add({
+          'product_id': prod.id,
+          'product_name': prod.name,
+          'unit_price': prod.sellingPrice,
+          'quantity': qty,
+          'line_total': prod.sellingPrice * qty,
+        });
+      }
+    }
 
     final clientId = 'order_${DateTime.now().millisecondsSinceEpoch}';
     final payload = {
       'line_items': lineItems,
+      'subtotal': _subtotal,
       'discount': _discount,
+      'total_amount': _totalAmount,
       'payment_method': _paymentMethod,
-      'amount_paid_now': _paymentMethod == 'cash' ? _total : _amountPaidNow,
       'customer_id': _selectedCustomer?.id,
       'client_id': clientId,
+      'amount_paid_now': _paymentMethod == 'cash' ? _totalAmount : (_paymentMethod == 'partial' ? _amountPaidNow : 0.0),
     };
 
     try {
@@ -101,31 +111,42 @@ class _PosScreenState extends State<PosScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order Created Successfully!'), backgroundColor: AppConstants.deepEmerald),
+        const SnackBar(content: Text('Order & Khata Invoice recorded successfully!'), backgroundColor: AppConstants.deepEmerald),
       );
-      Navigator.pop(context);
-    } on SocketException catch (_) {
-      await DatabaseHelper.instance.queueOfflineOrder(clientId, Uri.encodeComponent(payload.toString()));
+
+      setState(() {
+        _cartQuantities.clear();
+        _discount = 0.0;
+        _amountPaidNow = 0.0;
+        _isSubmitting = false;
+      });
+      _loadData();
+    } catch (e) {
+      // OFFLINE QUEUING: Store in SQLite pending queue
+      await DatabaseHelper.instance.queueOfflineOrder(clientId, jsonEncode(payload));
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Offline mode: Order queued for sync!'), backgroundColor: AppConstants.mutedTerracotta),
+        const SnackBar(
+          content: Text('Network offline: Order saved locally to SQLite queue for background sync.'),
+          backgroundColor: AppConstants.mutedTerracotta,
+        ),
       );
-      Navigator.pop(context);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString()), backgroundColor: AppConstants.alertRed),
-      );
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+
+      setState(() {
+        _cartQuantities.clear();
+        _isSubmitting = false;
+      });
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppConstants.creamBg,
       appBar: AppBar(
-        title: Text('New Order (POS)', style: GoogleFonts.instrumentSerif(color: AppConstants.charcoal, fontSize: 24, fontWeight: FontWeight.bold)),
+        title: Text('New Sale & POS', style: GoogleFonts.instrumentSerif(color: AppConstants.charcoal, fontSize: 24, fontWeight: FontWeight.bold)),
         backgroundColor: AppConstants.creamBg,
         elevation: 0,
         iconTheme: const IconThemeData(color: AppConstants.charcoal),
@@ -135,7 +156,7 @@ class _PosScreenState extends State<PosScreen> {
           // Product Selector List
           Expanded(
             child: _availableProducts.isEmpty
-                ? Center(
+                ? const Center(
                     child: Text('No products found', style: TextStyle(color: AppConstants.textMuted, fontSize: 16)),
                   )
                 : ListView.builder(
@@ -152,7 +173,7 @@ class _PosScreenState extends State<PosScreen> {
                           border: Border.all(color: AppConstants.softBorder),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.02),
+                              color: Colors.black.withValues(alpha: 0.02),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -214,7 +235,7 @@ class _PosScreenState extends State<PosScreen> {
               border: Border.all(color: AppConstants.softBorder),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
+                  color: Colors.black.withValues(alpha: 0.06),
                   blurRadius: 16,
                   offset: const Offset(0, -4),
                 ),

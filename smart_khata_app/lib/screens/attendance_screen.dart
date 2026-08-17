@@ -6,7 +6,7 @@ import '../core/constants.dart';
 import '../models/employee.dart';
 
 class AttendanceScreen extends StatefulWidget {
-  const AttendanceScreen({Key? key}) : super(key: key);
+  const AttendanceScreen({super.key});
 
   @override
   State<AttendanceScreen> createState() => _AttendanceScreenState();
@@ -14,7 +14,7 @@ class AttendanceScreen extends StatefulWidget {
 
 class _AttendanceScreenState extends State<AttendanceScreen> {
   List<Employee> _employees = [];
-  Map<String, String> _attendanceMap = {};
+  final Map<String, String> _attendanceMap = {};
   DateTime _selectedDate = DateTime.now();
   bool _isLoading = true;
 
@@ -63,11 +63,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         'status': status,
       });
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to update: $e'), backgroundColor: AppConstants.alertRed),
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {

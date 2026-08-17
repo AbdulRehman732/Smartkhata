@@ -5,7 +5,7 @@ import '../core/constants.dart';
 import '../models/product.dart';
 
 class InventoryScreen extends StatefulWidget {
-  const InventoryScreen({Key? key}) : super(key: key);
+  const InventoryScreen({super.key});
 
   @override
   State<InventoryScreen> createState() => _InventoryScreenState();
@@ -92,16 +92,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   'quantity_change': change,
                   'reason': 'manual_correction',
                 });
-                if (!mounted) return;
-                Navigator.pop(ctx);
+                if (ctx.mounted) Navigator.pop(ctx);
                 _fetchProducts();
               } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(e.toString()), backgroundColor: AppConstants.alertRed),
-                );
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(content: Text(e.toString()), backgroundColor: AppConstants.alertRed),
+                  );
+                }
               }
             },
+
             style: ElevatedButton.styleFrom(
               backgroundColor: AppConstants.deepEmerald,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

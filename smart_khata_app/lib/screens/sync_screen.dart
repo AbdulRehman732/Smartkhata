@@ -1,13 +1,17 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../core/constants.dart';
 import '../core/database_helper.dart';
 import '../core/sync_manager.dart';
 import '../core/api_client.dart';
 
 class SyncScreen extends StatefulWidget {
-  const SyncScreen({Key? key}) : super(key: key);
+  const SyncScreen({super.key});
 
   @override
   State<SyncScreen> createState() => _SyncScreenState();
@@ -28,6 +32,7 @@ class _SyncScreenState extends State<SyncScreen> {
   Future<void> _loadPendingCounts() async {
     final orders = await DatabaseHelper.instance.getPendingOrders();
     final att = await DatabaseHelper.instance.getPendingAttendance();
+    if (!mounted) return;
     setState(() {
       _pendingOrdersCount = orders.length;
       _pendingAttendanceCount = att.length;
@@ -43,12 +48,14 @@ class _SyncScreenState extends State<SyncScreen> {
     try {
       final syncManager = SyncManager();
       final res = await syncManager.performSync();
+      if (!mounted) return;
       setState(() {
         _syncMessage = 'Sync Complete! Pushed ${res['pushed_orders']} orders & ${res['pushed_attendance']} attendance records.';
         _isSyncing = false;
       });
       _loadPendingCounts();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _syncMessage = 'Sync Error: ${e.toString()}';
         _isSyncing = false;
@@ -57,17 +64,44 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   Future<void> _exportBackupFile() async {
-    setState(() => _isSyncing = true);
+    setState(() {
+      _isSyncing = true;
+      _syncMessage = null;
+    });
     try {
       final client = ApiClient();
       final backupData = await client.get('/backup/export');
-      final jsonStr = jsonEncode(backupData);
+      final jsonStr = const JsonEncoder.withIndent('  ').convert(backupData);
 
-      setState(() {
-        _syncMessage = 'Backup Export Ready! (${jsonStr.length} bytes extracted for local JSON backup / USB storage)';
-        _isSyncing = false;
-      });
+      final dateStr = DateTime.now().toIso8601String().split('T').first;
+      final fileName = 'smart_khata_backup_$dateStr.json';
+
+      if (!kIsWeb) {
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsString(jsonStr, flush: true);
+
+        final xfile = XFile(file.path, mimeType: 'application/json', name: fileName);
+        await Share.shareXFiles(
+          [xfile],
+          subject: 'Smart Khata JSON Database Backup ($dateStr)',
+          text: 'Smart Khata complete store database backup for USB / Drive / WhatsApp storage.',
+        );
+
+        if (!mounted) return;
+        setState(() {
+          _syncMessage = 'Backup Exported & Shared! ($fileName - ${jsonStr.length} bytes)';
+          _isSyncing = false;
+        });
+      } else {
+        if (!mounted) return;
+        setState(() {
+          _syncMessage = 'Backup Export Ready! ($fileName - ${jsonStr.length} bytes)';
+          _isSyncing = false;
+        });
+      }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _syncMessage = 'Export Error: ${e.toString()}';
         _isSyncing = false;
@@ -97,7 +131,7 @@ class _SyncScreenState extends State<SyncScreen> {
                 border: Border.all(color: AppConstants.softBorder),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.02),
+                    color: Colors.black.withValues(alpha: 0.02),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -133,7 +167,7 @@ class _SyncScreenState extends State<SyncScreen> {
                 decoration: BoxDecoration(
                   color: AppConstants.softGreenChip,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppConstants.deepEmerald.withOpacity(0.3)),
+                  border: Border.all(color: AppConstants.deepEmerald.withValues(alpha: 0.3)),
                 ),
                 child: Text(_syncMessage!, style: const TextStyle(color: AppConstants.deepEmerald, fontWeight: FontWeight.bold, fontSize: 13)),
               ),
@@ -159,8 +193,8 @@ class _SyncScreenState extends State<SyncScreen> {
               height: 52,
               child: OutlinedButton.icon(
                 onPressed: _isSyncing ? null : _exportBackupFile,
-                icon: const Icon(Icons.save_alt, color: AppConstants.mutedTerracotta, size: 20),
-                label: const Text('EXPORT LOCAL JSON BACKUP', style: TextStyle(color: AppConstants.mutedTerracotta, fontWeight: FontWeight.bold, fontSize: 14)),
+                icon: const Icon(Icons.share_rounded, color: AppConstants.mutedTerracotta, size: 20),
+                label: const Text('EXPORT & SHARE BACKUP (USB/DRIVE)', style: TextStyle(color: AppConstants.mutedTerracotta, fontWeight: FontWeight.bold, fontSize: 14)),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: AppConstants.mutedTerracotta, width: 1.5),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

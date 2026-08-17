@@ -5,7 +5,7 @@ import '../core/constants.dart';
 import '../models/customer.dart';
 
 class KhataScreen extends StatefulWidget {
-  const KhataScreen({Key? key}) : super(key: key);
+  const KhataScreen({super.key});
 
   @override
   State<KhataScreen> createState() => _KhataScreenState();
@@ -95,16 +95,17 @@ class _KhataScreenState extends State<KhataScreen> {
                   'amount': amt,
                   'note': noteController.text,
                 });
-                if (!mounted) return;
-                Navigator.pop(ctx);
+                if (ctx.mounted) Navigator.pop(ctx);
                 _fetchCustomers();
               } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(e.toString()), backgroundColor: AppConstants.alertRed),
-                );
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(content: Text(e.toString()), backgroundColor: AppConstants.alertRed),
+                  );
+                }
               }
             },
+
             style: ElevatedButton.styleFrom(
               backgroundColor: AppConstants.deepEmerald,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
