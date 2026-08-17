@@ -2,17 +2,8 @@
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
-[tool.pyrefly]
-python_interpreter = "C:/Users/aar25/Desktop/FYP/.venv/Scripts/python.exe"
-site_packages = ["C:/Users/aar25/Desktop/FYP/.venv/Lib/site-packages"]
-search_paths = ["C:/Users/aar25/Desktop/FYP/.venv/Lib/site-packages", "."]
-
-[tool.pyright]
-pythonPath = "C:/Users/aar25/Desktop/FYP/.venv/Scripts/python.exe"
-extraPaths = ["C:/Users/aar25/Desktop/FYP/.venv/Lib/site-packages"]
-venvPath = "C:/Users/aar25/Desktop/FYP"
-venv = ".venv"
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
+

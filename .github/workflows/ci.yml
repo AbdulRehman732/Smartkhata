@@ -27,7 +27,13 @@ jobs:
       - name: Run Backend Pytest Suite
         run: |
           cd smart_khata_backend
-          pytest
+          python -m pytest -v
+        env:
+          PYTHONPATH: .
+          JWT_SECRET_KEY: test_ci_secret_key_minimum_32_characters_long_12345
+          MONGODB_URL: mongodb://localhost:27017
+          DATABASE_NAME: smart_khata_test
+
 
   frontend-tests:
     name: Flutter Mobile Test Suite
