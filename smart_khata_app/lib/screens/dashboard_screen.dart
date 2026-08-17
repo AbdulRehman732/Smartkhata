@@ -586,7 +586,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   title: Text('Daily Attendance', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppConstants.charcoal)),
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendanceScreen()));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendanceScreen(initialTabIndex: 0)));
+                  },
+                ),
+                const SizedBox(height: 4),
+                ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: AppConstants.softGreenChip,
+                    child: Icon(Icons.beach_access, color: AppConstants.deepEmerald, size: 20),
+                  ),
+                  title: Text('Leave Requests', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppConstants.charcoal)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendanceScreen(initialTabIndex: 1)));
                   },
                 ),
                 if (_userRole == 'owner') ...[

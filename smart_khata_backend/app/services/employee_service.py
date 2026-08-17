@@ -53,6 +53,10 @@ async def get_employees(active_only: bool = False) -> List[Dict[str, Any]]:
     employees = await cursor.to_list(1000)
     for e in employees:
         e["id"] = e["_id"]
+        e["role_title"] = e.get("role_title") or e.get("role") or "Helper"
+        e["salary_type"] = e.get("salary_type") or "monthly"
+        e["salary_rate"] = float(e.get("salary_rate") or e.get("monthly_salary") or 20000.0)
+        e["updated_at"] = e.get("updated_at") or utc_now_iso()
         c_quota = e.get("casual_leave_quota", 12)
         s_quota = e.get("sick_leave_quota", 8)
         taken = e.get("leaves_taken", 0)
@@ -68,6 +72,10 @@ async def get_employee_by_id(employee_id: str) -> Optional[Dict[str, Any]]:
     doc = await db["employees"].find_one({"_id": employee_id})
     if doc:
         doc["id"] = doc["_id"]
+        doc["role_title"] = doc.get("role_title") or doc.get("role") or "Helper"
+        doc["salary_type"] = doc.get("salary_type") or "monthly"
+        doc["salary_rate"] = float(doc.get("salary_rate") or doc.get("monthly_salary") or 20000.0)
+        doc["updated_at"] = doc.get("updated_at") or utc_now_iso()
         c_quota = doc.get("casual_leave_quota", 12)
         s_quota = doc.get("sick_leave_quota", 8)
         taken = doc.get("leaves_taken", 0)
@@ -77,6 +85,7 @@ async def get_employee_by_id(employee_id: str) -> Optional[Dict[str, Any]]:
         doc["remaining_casual_leaves"] = max(0, c_quota - taken)
         doc["remaining_sick_leaves"] = max(0, s_quota)
     return doc
+
 
 # Leave Request System
 async def create_leave_request(data) -> Dict[str, Any]:
